@@ -62,6 +62,19 @@
   .tx .amt { font-size:14px; font-weight:700; color:#D9764F; }
   .tx .amt.income { color:#2E9E86; }
   .tx .amt.transfer { color:#C99A3E; }
+  
+  .tabs { display:flex; gap:8px; padding:12px 18px; background:#171b28; overflow-x:auto; }
+  .tab { flex:0 0 auto; padding:8px 14px; border-radius:8px; background:#0F1420; color:#8b93a7; font-size:13px; font-weight:500; border:none; cursor:pointer; white-space:nowrap; }
+  .tab.active { background:#262c3d; color:#F3EFE6; }
+  .installment-item { background:#171b28; border-radius:12px; padding:12px; margin-bottom:10px; }
+  .installment-item .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .installment-item .amount { font-size:16px; font-weight:700; color:#F3EFE6; }
+  .installment-item .paid { font-size:12px; color:#2E9E86; }
+  .installment-item .date-info { font-size:12px; color:#8b93a7; margin-bottom:8px; }
+  .installment-progress { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .install-checkbox { display:flex; align-items:center; gap:8px; padding:8px; background:#0F1420; border-radius:8px; margin-bottom:6px; cursor:pointer; }
+  .install-checkbox input { cursor:pointer; }
+  .install-checkbox .date { font-size:11.5px; color:#6b7386; }
 
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:flex-end; z-index:50; }
   .sheet { width:100%; background:#151926; border-radius:20px 20px 0 0; padding:20px 18px 28px; max-height:85vh; overflow-y:auto; }
@@ -108,6 +121,16 @@ function fmtDate(ts){
     return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(ts));
   }catch(e){ return new Date(ts).toLocaleString("fa-IR"); }
 }
+function fmtPersianDate(ts){
+  try{
+    return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(ts));
+  }catch(e){ return new Date(ts).toLocaleDateString("fa-IR"); }
+}
+function addMonths(date, months){
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
 function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
@@ -137,7 +160,7 @@ const ICONS = {
 
 // ---------- state ----------
 const STORAGE_KEY = "money-widget-data-v1";
-let state = { banks: [], transactions: [], activeBankId: null, showAddBank: false, showTransfer: false, mode: "expense", amount: "", note: "" };
+let state = { banks: [], transactions: [], installments: [], activeBankId: null, showAddBank: false, showTransfer: false, mode: "expense", amount: "", note: "", activeTab: "main" };
 
 function loadState(){
   try{
@@ -146,13 +169,14 @@ function loadState(){
       const data = JSON.parse(raw);
       state.banks = data.banks || [];
       state.transactions = data.transactions || [];
+      state.installments = data.installments || [];
       if(state.banks.length) state.activeBankId = state.banks[0].id;
     }
   }catch(e){}
 }
 function saveState(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ banks: state.banks, transactions: state.transactions }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ banks: state.banks, transactions: state.transactions, installments: state.installments }));
   }catch(e){ console.error("save failed", e); }
 }
 
@@ -233,6 +257,39 @@ function handleImportFile(file){
   reader.readAsText(file);
 }
 
+// ---------- installments ----------
+function addInstallment(amount, startDate, installmentCount){
+  const inst = {
+    id: uid(),
+    amount: Number(amount)||0,
+    startDate: new Date(startDate).getTime(),
+    installmentCount: Number(installmentCount)||12,
+    paidInstallments: []
+  };
+  state.installments.push(inst);
+  saveState(); render();
+  showToast("قسط اضافه شد");
+}
+function toggleInstallmentPayment(installmentId, monthIndex){
+  const inst = state.installments.find(i=>i.id===installmentId);
+  if(!inst) return;
+  
+  if(inst.paidInstallments.includes(monthIndex)){
+    inst.paidInstallments = inst.paidInstallments.filter(m=>m!==monthIndex);
+  } else {
+    inst.paidInstallments.push(monthIndex);
+  }
+  
+  saveState(); render();
+}
+function deleteInstallment(id){
+  state.installments = state.installments.filter(i=>i.id!==id);
+  saveState(); render();
+}
+function getInstallmentDueDate(inst, monthIndex){
+  return addMonths(new Date(inst.startDate), monthIndex);
+}
+
 // ---------- render ----------
 function render(){
   const app = document.getElementById("app");
@@ -269,6 +326,7 @@ function render(){
       ${activeBank && state.amount ? `<div class="after-note">مانده بعد از این ${mode==='expense'?'خرید':'واریز'}: <b>${fmt(mode==='expense' ? activeBank.balance - (Number(state.amount)||0) : activeBank.balance + (Number(state.amount)||0))} تومان</b></div>` : ''}
     </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی ثبت کنی.</div>`;
 
+  // ---------- build transaction history ----------
   const txHtml = state.transactions.length ? state.transactions.map(t=>{
     if(t.type === "transfer"){
       const fromBank = state.banks.find(b=>b.id===t.fromBankId);
@@ -302,6 +360,93 @@ function render(){
       </div>`;
   }).join("") : `<div class="empty">هنوز تراکنشی ثبت نشده.</div>`;
 
+  // ---------- main tab content ----------
+  const mainContent = state.banks.length ? `
+    ${quickAddHtml}
+    <div class="history">
+      <div class="head">
+        <div class="title">تراکنش‌های اخیر</div>
+      </div>
+      ${txHtml}
+    </div>
+  ` : `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">اول یه بانک اضافه کن.</div>`;
+
+  // ---------- transfer tab content ----------
+  const transferContent = state.banks.length > 1 ? `
+    <div class="card">
+      <div class="title">انتقال از کارت به کارت</div>
+      <div class="field-label">از کدام بانک؟</div>
+      <select class="note-input" id="transferFromTab">
+        ${state.banks.map(b=>`<option value="${b.id}" ${b.id===state._transferFromTab?'selected':''}>${esc(b.name)}</option>`).join("")}
+      </select>
+      <div class="field-label">به کدام بانک؟</div>
+      <select class="note-input" id="transferToTab">
+        ${state.banks.map(b=>`<option value="${b.id}" ${b.id===state._transferToTab?'selected':''}>${esc(b.name)}</option>`).join("")}
+      </select>
+      <input class="amount-input" inputmode="numeric" placeholder="مبلغ انتقال (تومان)" id="transferAmountTab" value="${esc(state._transferAmountTab||'')}" />
+      <input class="note-input" placeholder="توضیح (اختیاری)" id="transferNoteTab" value="${esc(state._transferNoteTab||'')}" />
+      <button class="submit-btn" id="submitTransferTabBtn" ${(!state._transferAmountTab || state._transferFromTab === state._transferToTab)?'disabled':''}>${ICONS.transfer} انتقال دادن</button>
+    </div>
+  ` : `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">برای انتقال، حداقل دو بانک لازم است.</div>`;
+
+  // ---------- installments tab content ----------
+  const installmentsContent = `
+    <div class="card">
+      <div class="title">قسط جدید</div>
+      <input class="amount-input" inputmode="numeric" placeholder="مبلغ قسط (تومان)" id="instAmount" value="${esc(state._instAmount||'')}" />
+      <div class="field-label">تاریخ شروع</div>
+      <input class="note-input" type="date" id="instDate" value="${state._instDate||new Date().toISOString().split('T')[0]}" />
+      <div class="field-label">تعداد اقساط</div>
+      <select class="note-input" id="instCount">
+        <option value="3" ${state._instCount==='3'?'selected':''}>3 ماه</option>
+        <option value="6" ${state._instCount==='6'?'selected':''}>6 ماه</option>
+        <option value="12" ${state._instCount==='12'?'selected':''}>12 ماه</option>
+        <option value="24" ${state._instCount==='24'?'selected':''}>24 ماه</option>
+      </select>
+      <button class="submit-btn" id="submitInstBtn" ${!state._instAmount?'disabled':''}>اضافه کردن قسط</button>
+    </div>
+    <div class="history">
+      <div class="head">
+        <div class="title">اقساط فعال</div>
+      </div>
+      ${state.installments.length ? state.installments.map(inst=>{
+        const installmentItems = [];
+        for(let i=0; i<inst.installmentCount; i++){
+          const dueDate = getInstallmentDueDate(inst, i);
+          const isPaid = inst.paidInstallments.includes(i);
+          installmentItems.push(`
+            <div class="install-checkbox">
+              <input type="checkbox" id="inst_${inst.id}_${i}" ${isPaid?'checked':''} data-inst-id="${inst.id}" data-month="${i}" />
+              <label for="inst_${inst.id}_${i}" style="flex:1;cursor:pointer;">
+                <div style="font-size:13px;color:#F3EFE6;">قسط ${i+1}: ${fmt(inst.amount)} تومان</div>
+                <div class="date">${fmtPersianDate(dueDate)}</div>
+              </label>
+            </div>
+          `);
+        }
+        return `
+          <div class="installment-item">
+            <div class="header">
+              <div>
+                <div class="amount">${fmt(inst.amount)} تومان</div>
+                <div class="paid">کل: ${fmt(inst.amount * inst.installmentCount)}</div>
+              </div>
+              <button style="color:#D9764F;" data-delete-inst="${inst.id}">${ICONS.trash}</button>
+            </div>
+            <div class="date-info">شروع: ${fmtPersianDate(inst.startDate)} | تعداد: ${inst.installmentCount} ماه | پرداخت‌شده: ${inst.paidInstallments.length}/${inst.installmentCount}</div>
+            <div class="installment-progress">
+              ${installmentItems.join("")}
+            </div>
+          </div>
+        `;
+      }).join("") : `<div class="empty">هنوز قسطی ثبت نشده.</div>`}
+    </div>
+  `;
+
+  // ---------- render main app ----------
+  const tabContent = state.activeTab === "transfer" ? transferContent : 
+                     state.activeTab === "installments" ? installmentsContent : mainContent;
+
   app.innerHTML = `
     <div class="header">
       <div>
@@ -318,20 +463,17 @@ function render(){
     <div class="cards">
       ${cardsHtml}
       <button class="add-card" id="openAddBank">${ICONS.plus}<span>بانک جدید</span></button>
-      ${state.banks.length>1 ? `<button class="add-card" id="openTransfer">${ICONS.transfer}<span>انتقال</span></button>` : ''}
     </div>
 
-    ${quickAddHtml}
-
-    <div class="history">
-      <div class="head">
-        <div class="title">تراکنش‌های اخیر</div>
-      </div>
-      ${txHtml}
+    <div class="tabs">
+      <button class="tab ${state.activeTab==='main'?'active':''}" data-tab="main">خانه</button>
+      ${state.banks.length>1 ? `<button class="tab ${state.activeTab==='transfer'?'active':''}" data-tab="transfer">انتقال کارت</button>` : ''}
+      <button class="tab ${state.activeTab==='installments'?'active':''}" data-tab="installments">اقساط</button>
     </div>
+
+    ${tabContent}
 
     ${state.showAddBank ? renderAddBankModal() : ''}
-    ${state.showTransfer ? renderTransferModal() : ''}
     <datalist id="noteSuggestions">
       ${getNoteSuggestions().map(n=>`<option value="${esc(n)}"></option>`).join("")}
     </datalist>
@@ -501,6 +643,87 @@ function attachEvents(){
       e.target.value = '';
     });
   }
+
+  // ---------- tabs ----------
+  document.querySelectorAll('[data-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.activeTab = el.getAttribute('data-tab'); render(); });
+  });
+
+  // ---------- transfer tab ----------
+  const transferFromTab = document.getElementById('transferFromTab');
+  if(transferFromTab) transferFromTab.addEventListener('change', e=>{ state._transferFromTab = e.target.value; render(); });
+  const transferToTab = document.getElementById('transferToTab');
+  if(transferToTab) transferToTab.addEventListener('change', e=>{ state._transferToTab = e.target.value; render(); });
+  const transferAmountTab = document.getElementById('transferAmountTab');
+  if(transferAmountTab) transferAmountTab.addEventListener('input', e=>{
+    state._transferAmountTab = toEnglishDigits(e.target.value);
+    const btn = document.getElementById('submitTransferTabBtn');
+    if(btn) btn.disabled = !state._transferAmountTab || Number(state._transferAmountTab)<=0 || (state._transferFromTab===state._transferToTab);
+  });
+  const transferNoteTab = document.getElementById('transferNoteTab');
+  if(transferNoteTab) transferNoteTab.addEventListener('input', e=>{ state._transferNoteTab = e.target.value; });
+  const submitTransferTabBtn = document.getElementById('submitTransferTabBtn');
+  if(submitTransferTabBtn) submitTransferTabBtn.addEventListener('click', ()=>{
+    if(!state._transferFromTab || !state._transferToTab || !state._transferAmountTab || Number(state._transferAmountTab)<=0) return;
+    const fromBank = state.banks.find(b=>b.id===state._transferFromTab);
+    const toBank = state.banks.find(b=>b.id===state._transferToTab);
+    if(!fromBank || !toBank || fromBank.balance < Number(state._transferAmountTab)) return;
+    
+    const amt = Number(state._transferAmountTab);
+    fromBank.balance -= amt;
+    toBank.balance += amt;
+    state.transactions.push({
+      id: uid(),
+      type: "transfer",
+      fromBankId: state._transferFromTab,
+      toBankId: state._transferToTab,
+      amount: amt,
+      note: state._transferNoteTab,
+      date: Date.now()
+    });
+    
+    state._transferFromTab = '';
+    state._transferToTab = '';
+    state._transferAmountTab = '';
+    state._transferNoteTab = '';
+    saveState(); render();
+    showToast("انتقال کارت انجام شد");
+  });
+
+  // ---------- installments ----------
+  const instAmount = document.getElementById('instAmount');
+  if(instAmount) instAmount.addEventListener('input', e=>{
+    state._instAmount = toEnglishDigits(e.target.value);
+    const btn = document.getElementById('submitInstBtn');
+    if(btn) btn.disabled = !state._instAmount || Number(state._instAmount)<=0;
+  });
+  const instDate = document.getElementById('instDate');
+  if(instDate) instDate.addEventListener('change', e=>{ state._instDate = e.target.value; });
+  const instCount = document.getElementById('instCount');
+  if(instCount) instCount.addEventListener('change', e=>{ state._instCount = e.target.value; });
+  const submitInstBtn = document.getElementById('submitInstBtn');
+  if(submitInstBtn) submitInstBtn.addEventListener('click', ()=>{
+    if(!state._instAmount || Number(state._instAmount)<=0) return;
+    addInstallment(state._instAmount, state._instDate || new Date(), state._instCount || 12);
+    state._instAmount = '';
+    state._instDate = '';
+    state._instCount = '';
+    render();
+  });
+
+  // ---------- installment checkboxes ----------
+  document.querySelectorAll('[data-inst-id]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      toggleInstallmentPayment(el.getAttribute('data-inst-id'), parseInt(el.getAttribute('data-month')));
+    });
+  });
+
+  // ---------- delete installment ----------
+  document.querySelectorAll('[data-delete-inst]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if(confirm('این قسط حذف شود؟')) deleteInstallment(el.getAttribute('data-delete-inst'));
+    });
+  });
 }
 
 // ---------- init ----------
