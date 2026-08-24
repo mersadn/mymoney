@@ -376,6 +376,38 @@ function undoLastInstallmentPayment(installmentId){
   inst.paidCount = Math.max(0, (inst.paidCount||0) - 1);
   saveState(); render();
 }
+function openEditInst(id){
+  const inst = state.installments.find(i=>i.id===id);
+  if(!inst) return;
+  const jy = toJalaliYMD(new Date(inst.startDate));
+  state.editingInstId = id;
+  state._editInstName = inst.name || '';
+  state._editInstAmount = String(inst.amount);
+  state._editInstCount = String(inst.installmentCount);
+  state._editInstYear = jy.y;
+  state._editInstMonth = jy.m;
+  state._editInstDay = jy.d;
+  render();
+}
+function closeEditInst(){
+  state.editingInstId = null;
+  render();
+}
+function saveEditInst(){
+  const inst = state.installments.find(i=>i.id===state.editingInstId);
+  if(!inst) return;
+  const amount = Number(state._editInstAmount);
+  const count = Math.max(1, Number(state._editInstCount)||1);
+  if(!amount || amount<=0){ showToast("مبلغ معتبر نیست"); return; }
+  inst.name = (state._editInstName||'').trim();
+  inst.amount = amount;
+  inst.installmentCount = count;
+  inst.startDate = jalaliToGregorian(state._editInstYear, state._editInstMonth, state._editInstDay).getTime();
+  if(inst.paidCount > inst.installmentCount) inst.paidCount = inst.installmentCount;
+  state.editingInstId = null;
+  saveState(); render();
+  showToast("قسط ویرایش شد");
+}
 function deleteInstallment(id){
   state.installments = state.installments.filter(i=>i.id!==id);
   saveState(); render();
@@ -564,7 +596,10 @@ function render(){
                 <div class="amount">${esc(inst.name || 'قسط بدون‌نام')}</div>
                 <div class="paid">${fmt(inst.amount)} × ${inst.installmentCount} = ${fmt(inst.amount * inst.installmentCount)} تومان</div>
               </div>
-              <button style="color:#D9764F;" data-delete-inst="${inst.id}">${ICONS.trash}</button>
+              <div style="display:flex;gap:6px;">
+                <button class="tx-icon-btn" data-edit-inst="${inst.id}" title="ویرایش">${ICONS.pencil}</button>
+                <button class="tx-icon-btn danger" data-delete-inst="${inst.id}" title="حذف">${ICONS.trash}</button>
+              </div>
             </div>
             <div class="date-info">شروع: ${fmtPersianDate(inst.startDate)} | پرداخت‌شده: ${paidCount}/${inst.installmentCount}</div>
             ${bodyHtml}
@@ -606,6 +641,7 @@ function render(){
 
     ${state.showAddBank ? renderAddBankModal() : ''}
     ${state.editingTxId ? renderEditTxModal() : ''}
+    ${state.editingInstId ? renderEditInstModal() : ''}
     <datalist id="noteSuggestions">
       ${getNoteSuggestions().map(n=>`<option value="${esc(n)}"></option>`).join("")}
     </datalist>
@@ -655,6 +691,42 @@ function renderEditTxModal(){
       <div class="field-label">توضیح</div>
       <input class="note-input" id="editTxNote" value="${esc(state._editNote!=null ? state._editNote : (t.note||''))}" />
       <button class="submit-btn" id="saveEditTxBtn">ذخیره تغییرات</button>
+    </div>
+  </div>`;
+}
+
+function renderEditInstModal(){
+  const inst = state.installments.find(i=>i.id===state.editingInstId);
+  if(!inst) return '';
+  const y = state._editInstYear, m = state._editInstMonth, d = state._editInstDay;
+  const monthLen = jalaliMonthLength(y, m);
+  if(state._editInstDay > monthLen) state._editInstDay = monthLen;
+  const yearOptions = Array.from({length:8},(_,i)=> y-3+i)
+    .map(yy=>`<option value="${yy}" ${state._editInstYear===yy?'selected':''}>${yy}</option>`).join("");
+  const monthOptions = PERSIAN_MONTHS
+    .map((name,i)=>`<option value="${i+1}" ${state._editInstMonth===(i+1)?'selected':''}>${name}</option>`).join("");
+  const dayOptions = Array.from({length:monthLen},(_,i)=>i+1)
+    .map(dd=>`<option value="${dd}" ${state._editInstDay===dd?'selected':''}>${dd}</option>`).join("");
+  return `
+  <div class="overlay" id="editInstOverlay">
+    <div class="sheet">
+      <div class="head">
+        <div class="title">ویرایش قسط</div>
+        <button class="close-btn" id="closeEditInst">${ICONS.x}</button>
+      </div>
+      <div class="field-label">اسم قسط</div>
+      <input class="note-input" id="editInstName" value="${esc(state._editInstName||'')}" />
+      <div class="field-label">مبلغ هر قسط (تومان)</div>
+      <input class="amount-input" inputmode="numeric" id="editInstAmount" value="${esc(state._editInstAmount||'')}" />
+      <div class="field-label">تاریخ شروع (شمسی)</div>
+      <div style="display:flex; gap:8px;">
+        <select class="note-input" id="editInstYear" style="flex:1;">${yearOptions}</select>
+        <select class="note-input" id="editInstMonth" style="flex:1;">${monthOptions}</select>
+        <select class="note-input" id="editInstDay" style="flex:1;">${dayOptions}</select>
+      </div>
+      <div class="field-label">تعداد اقساط (ماه)</div>
+      <input class="note-input" inputmode="numeric" type="number" min="1" id="editInstCount" value="${esc(state._editInstCount||'')}" />
+      <button class="submit-btn" id="saveEditInstBtn">ذخیره تغییرات</button>
     </div>
   </div>`;
 }
@@ -900,6 +972,35 @@ function attachEvents(){
       if(confirm('این قسط حذف شود؟')) deleteInstallment(el.getAttribute('data-delete-inst'));
     });
   });
+
+  // ---------- edit installment ----------
+  document.querySelectorAll('[data-edit-inst]').forEach(el=>{
+    el.addEventListener('click', ()=> openEditInst(el.getAttribute('data-edit-inst')));
+  });
+  const closeEditInstBtn = document.getElementById('closeEditInst');
+  if(closeEditInstBtn) closeEditInstBtn.addEventListener('click', closeEditInst);
+  const editInstOverlay = document.getElementById('editInstOverlay');
+  if(editInstOverlay) editInstOverlay.addEventListener('click', e=>{ if(e.target.id==='editInstOverlay') closeEditInst(); });
+  const editInstName = document.getElementById('editInstName');
+  if(editInstName) editInstName.addEventListener('input', e=>{ state._editInstName = e.target.value; });
+  const editInstAmount = document.getElementById('editInstAmount');
+  if(editInstAmount) editInstAmount.addEventListener('input', e=>{
+    state._editInstAmount = toEnglishDigits(e.target.value);
+    e.target.value = state._editInstAmount;
+  });
+  const editInstCount = document.getElementById('editInstCount');
+  if(editInstCount) editInstCount.addEventListener('input', e=>{
+    state._editInstCount = toEnglishDigits(e.target.value);
+    e.target.value = state._editInstCount;
+  });
+  const editInstYear = document.getElementById('editInstYear');
+  if(editInstYear) editInstYear.addEventListener('change', e=>{ state._editInstYear = parseInt(e.target.value); render(); });
+  const editInstMonth = document.getElementById('editInstMonth');
+  if(editInstMonth) editInstMonth.addEventListener('change', e=>{ state._editInstMonth = parseInt(e.target.value); render(); });
+  const editInstDay = document.getElementById('editInstDay');
+  if(editInstDay) editInstDay.addEventListener('change', e=>{ state._editInstDay = parseInt(e.target.value); render(); });
+  const saveEditInstBtn = document.getElementById('saveEditInstBtn');
+  if(saveEditInstBtn) saveEditInstBtn.addEventListener('click', saveEditInst);
 
   // ---------- edit / delete transaction ----------
   document.querySelectorAll('[data-edit-tx]').forEach(el=>{
