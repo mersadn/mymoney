@@ -53,7 +53,6 @@
   .history { padding:18px 18px 90px; }
   .history .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
   .history .head .title { font-size:14px; font-weight:600; color:#F3EFE6; }
-  .undo-btn { display:flex; align-items:center; gap:4px; color:#C99A3E; font-size:12.5px; }
   .empty { color:#5c6577; font-size:13px; text-align:center; padding:30px 0; }
   .tx { display:flex; align-items:center; justify-content:space-between; background:#171b28; border-radius:12px; padding:10px 12px; margin-bottom:8px; }
   .tx .left { display:flex; align-items:center; gap:10px; }
@@ -112,6 +111,17 @@ function fmtDate(ts){
 function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
+function getNoteSuggestions(){
+  const seen = new Set();
+  const list = [];
+  for (const t of state.transactions){
+    if (t.note && t.note.trim() && !seen.has(t.note)){
+      seen.add(t.note);
+      list.push(t.note);
+    }
+  }
+  return list.slice(0, 40);
+}
 
 // ---------- icons (tiny inline svg) ----------
 const ICONS = {
@@ -119,7 +129,6 @@ const ICONS = {
   trash:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>',
   x:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-  undo:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>',
   bank:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18M3 10l9-7 9 7M4 10v9M20 10v9M8 10v9M12 10v9M16 10v9"/></svg>',
   download:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
   upload:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
@@ -198,24 +207,6 @@ function submitTransfer(){
   saveState(); render();
   showToast("انتقال انجام شد");
 }
-function undoLast(){
-  if(!state.transactions.length) return;
-  const last = state.transactions.shift();
-  if(last.type === "transfer"){
-    const fromBank = state.banks.find(b=>b.id===last.fromBankId);
-    const toBank = state.banks.find(b=>b.id===last.toBankId);
-    if(fromBank) fromBank.balance += last.amount;
-    if(toBank) toBank.balance -= last.amount;
-  } else if(last.type === "income"){
-    const bank = state.banks.find(b=>b.id===last.bankId);
-    if(bank) bank.balance -= last.amount;
-  } else {
-    const bank = state.banks.find(b=>b.id===last.bankId);
-    if(bank) bank.balance += last.amount;
-  }
-  saveState(); render();
-  showToast("آخرین تراکنش برگشت خورد");
-}
 function exportData(){
   const payload = { app:"money-widget", version:1, exportedAt: new Date().toISOString(), banks: state.banks, transactions: state.transactions };
   const blob = new Blob([JSON.stringify(payload,null,2)], { type:"application/json" });
@@ -273,7 +264,7 @@ function render(){
       </div>
       <div class="title">${mode==='expense' ? `ثبت خرید از «${esc(activeBank?activeBank.name:'')}»` : `افزایش موجودی «${esc(activeBank?activeBank.name:'')}»`}</div>
       <input class="amount-input" inputmode="numeric" placeholder="${mode==='expense'?'مبلغ خرید (تومان)':'مبلغ واریزی (تومان)'}" id="amountInput" value="${esc(state.amount)}" />
-      <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="noteInput" value="${esc(state.note)}" />
+      <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="noteInput" list="noteSuggestions" value="${esc(state.note)}" />
       <button class="submit-btn" id="submitBtn" ${(!state.amount || Number(state.amount)<=0)?'disabled':''}>${mode==='expense'?'کم کن از موجودی':'اضافه کن به موجودی'}</button>
       ${activeBank && state.amount ? `<div class="after-note">مانده بعد از این ${mode==='expense'?'خرید':'واریز'}: <b>${fmt(mode==='expense' ? activeBank.balance - (Number(state.amount)||0) : activeBank.balance + (Number(state.amount)||0))} تومان</b></div>` : ''}
     </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی ثبت کنی.</div>`;
@@ -335,13 +326,15 @@ function render(){
     <div class="history">
       <div class="head">
         <div class="title">تراکنش‌های اخیر</div>
-        ${state.transactions.length ? `<button class="undo-btn" id="undoBtn">${ICONS.undo} برگشت آخرین</button>` : ''}
       </div>
       ${txHtml}
     </div>
 
     ${state.showAddBank ? renderAddBankModal() : ''}
     ${state.showTransfer ? renderTransferModal() : ''}
+    <datalist id="noteSuggestions">
+      ${getNoteSuggestions().map(n=>`<option value="${esc(n)}"></option>`).join("")}
+    </datalist>
     <div class="toast" id="toast"></div>
   `;
 
@@ -366,7 +359,7 @@ function renderTransferModal(){
       <div class="field-label">به</div>
       <select class="note-input" id="transferTo">${options(toId)}</select>
       <input class="amount-input" inputmode="numeric" placeholder="مبلغ انتقال (تومان)" id="transferAmount" value="${esc(state._transferAmount||'')}" />
-      <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="transferNote" value="${esc(state._transferNote||'')}" />
+      <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="transferNote" list="noteSuggestions" value="${esc(state._transferNote||'')}" />
       ${fromId===toId ? `<div class="field-label" style="color:#D9764F;margin-bottom:10px;">بانک مبدا و مقصد نباید یکی باشن</div>` : ''}
       <button class="submit-btn" id="submitTransferBtn" ${!canSubmit?'disabled':''}>انتقال بده</button>
     </div>
@@ -435,9 +428,6 @@ function attachEvents(){
   document.querySelectorAll('[data-mode]').forEach(el=>{
     el.addEventListener('click', ()=>{ state.mode = el.getAttribute('data-mode'); render(); });
   });
-
-  const undoBtn = document.getElementById('undoBtn');
-  if(undoBtn) undoBtn.addEventListener('click', undoLast);
 
   const openTransfer = document.getElementById('openTransfer');
   if(openTransfer) openTransfer.addEventListener('click', ()=>{
