@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>مدیریت پول</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="theme-color" content="#0F1420" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="مدیریت پول" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+  * { box-sizing: border-box; font-family: 'Vazirmatn', sans-serif; margin:0; padding:0; }
+  html,body { background:#0F1420; color:#F3EFE6; }
+  ::-webkit-scrollbar { display:none; }
+  button { cursor:pointer; font-family:inherit; border:none; background:none; color:inherit; }
+  input { font-family:inherit; }
+  #app { min-height:100vh; padding-bottom:16px; }
+
+  .header { padding:22px 18px 8px; display:flex; justify-content:space-between; align-items:flex-start; }
+  .header .label { font-size:13px; color:#8b93a7; margin-bottom:4px; }
+  .header .total { font-size:34px; font-weight:800; color:#F3EFE6; letter-spacing:-0.5px; }
+  .header .total .unit { font-size:16px; font-weight:500; color:#C99A3E; }
+  .header .actions { display:flex; gap:8px; margin-top:4px; }
+  .icon-btn { width:34px; height:34px; border-radius:10px; background:#171b28; border:1px solid #262c3d; display:flex; align-items:center; justify-content:center; }
+
+  .cards { display:flex; gap:12px; overflow-x:auto; padding:14px 18px 6px; scroll-snap-type:x proximity; }
+  .bank-card { flex:0 0 auto; width:190px; height:112px; border-radius:16px; border:2px solid transparent; padding:14px; display:flex; flex-direction:column; justify-content:space-between; text-align:right; scroll-snap-align:start; box-shadow:0 4px 12px rgba(0,0,0,0.25); transition:transform .15s, box-shadow .15s; }
+  .bank-card.active { border-color:#F3EFE6; box-shadow:0 8px 22px rgba(0,0,0,0.35); transform:translateY(-2px); }
+  .bank-card .top { display:flex; justify-content:space-between; align-items:flex-start; }
+  .bank-card .name { font-size:13px; color:rgba(255,255,255,0.8); margin-bottom:2px; }
+  .bank-card .balance { font-size:19px; font-weight:700; color:#fff; }
+  .add-card { flex:0 0 auto; width:96px; height:112px; border-radius:16px; border:2px dashed #333c4d; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; color:#8b93a7; font-size:12px; }
+
+  .card { margin:14px 18px 0; background:#171b28; border-radius:16px; padding:16px; }
+  .card .title { font-size:13px; color:#8b93a7; margin-bottom:10px; }
+  .amount-input { width:100%; background:#0F1420; border:1px solid #2a3040; border-radius:10px; padding:12px 14px; font-size:17px; font-weight:700; color:#F3EFE6; margin-bottom:10px; outline:none; text-align:right; }
+  .note-input { width:100%; background:#0F1420; border:1px solid #2a3040; border-radius:10px; padding:11px 14px; font-size:13.5px; color:#F3EFE6; margin-bottom:10px; outline:none; text-align:right; }
+  .submit-btn { width:100%; background:linear-gradient(135deg,#C99A3E,#8C6A1F); border-radius:10px; padding:13px 14px; font-size:14.5px; font-weight:700; color:#0F1420; }
+  .submit-btn:disabled { opacity:.45; }
+  .after-note { font-size:12.5px; color:#8b93a7; margin-top:10px; text-align:center; }
+  .after-note b { color:#F3EFE6; }
+
+  .history { padding:18px 18px 90px; }
+  .history .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .history .head .title { font-size:14px; font-weight:600; color:#F3EFE6; }
+  .undo-btn { display:flex; align-items:center; gap:4px; color:#C99A3E; font-size:12.5px; }
+  .empty { color:#5c6577; font-size:13px; text-align:center; padding:30px 0; }
+  .tx { display:flex; align-items:center; justify-content:space-between; background:#171b28; border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .tx .left { display:flex; align-items:center; gap:10px; }
+  .dot { width:8px; height:8px; border-radius:50%; }
+  .tx .note { font-size:13.5px; color:#F3EFE6; }
+  .tx .meta { font-size:11.5px; color:#6b7386; }
+  .tx .amt { font-size:14px; font-weight:700; color:#D9764F; }
+
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:flex-end; z-index:50; }
+  .sheet { width:100%; background:#151926; border-radius:20px 20px 0 0; padding:20px 18px 28px; max-height:85vh; overflow-y:auto; }
+  .sheet .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  .sheet .head .title { font-size:16px; font-weight:700; color:#F3EFE6; }
+  .close-btn { background:#1f2433; border-radius:8px; padding:6px; display:flex; }
+  .palette { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+  .swatch { width:40px; height:40px; border-radius:10px; border:2px solid transparent; }
+  .swatch.active { border-color:#F3EFE6; }
+  .bank-manage-row { display:flex; justify-content:space-between; align-items:center; padding:8px 4px; }
+  .bank-manage-row span { font-size:13px; color:#c7cddb; }
+  .bank-manage-row button { color:#D9764F; }
+
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#1f2433; color:#F3EFE6; padding:9px 16px; border-radius:999px; font-size:12.5px; display:flex; align-items:center; gap:6px; box-shadow:0 6px 18px rgba(0,0,0,0.4); z-index:100; opacity:0; pointer-events:none; transition:opacity .2s; }
+  .toast.show { opacity:1; }
+
+  svg { display:block; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ---------- palette ----------
+const PALETTE = [
+  { id:"gold",  from:"#C99A3E", to:"#8C6A1F", label:"طلایی" },
+  { id:"teal",  from:"#2E9E86", to:"#175E4F", label:"سبزآبی" },
+  { id:"coral", from:"#C2603F", to:"#7E3820", label:"مسی" },
+  { id:"indigo",from:"#4B5A9E", to:"#2A3364", label:"نیلی" },
+  { id:"rose",  from:"#A34E6B", to:"#602B3E", label:"زرشکی" },
+  { id:"slate", from:"#556070", to:"#2E353E", label:"سربی" },
+];
+function paletteFor(id){ return PALETTE.find(p=>p.id===id) || PALETTE[0]; }
+
+// ---------- helpers ----------
+function fmt(n){ return Math.round(Number(n)||0).toLocaleString("fa-IR"); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function toEnglishDigits(str){
+  const fa="۰۱۲۳۴۵۶۷۸۹", ar="٠١٢٣٤٥٦٧٨٩";
+  return String(str).replace(/[۰-۹]/g,d=>fa.indexOf(d)).replace(/[٠-٩]/g,d=>ar.indexOf(d)).replace(/[^0-9]/g,"");
+}
+function fmtDate(ts){
+  try{
+    return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(ts));
+  }catch(e){ return new Date(ts).toLocaleString("fa-IR"); }
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ---------- icons (tiny inline svg) ----------
+const ICONS = {
+  plus:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  trash:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>',
+  x:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  undo:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>',
+  bank:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18M3 10l9-7 9 7M4 10v9M20 10v9M8 10v9M12 10v9M16 10v9"/></svg>',
+  download:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+  upload:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
+};
+
+// ---------- state ----------
+const STORAGE_KEY = "money-widget-data-v1";
+let state = { banks: [], transactions: [], activeBankId: null, showAddBank: false, amount: "", note: "" };
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const data = JSON.parse(raw);
+      state.banks = data.banks || [];
+      state.transactions = data.transactions || [];
+      if(state.banks.length) state.activeBankId = state.banks[0].id;
+    }
+  }catch(e){}
+}
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ banks: state.banks, transactions: state.transactions }));
+  }catch(e){ console.error("save failed", e); }
+}
+
+let toastTimer = null;
+function showToast(msg){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove("show"), 1800);
+}
+
+// ---------- actions ----------
+function addBank(name, balance, colorId){
+  const b = { id: uid(), name, balance: Number(balance)||0, color: colorId };
+  state.banks.push(b);
+  state.activeBankId = b.id;
+  state.showAddBank = false;
+  saveState(); render();
+}
+function deleteBank(id){
+  state.banks = state.banks.filter(b=>b.id!==id);
+  state.transactions = state.transactions.filter(t=>t.bankId!==id);
+  if(state.activeBankId===id){
+    state.activeBankId = state.banks.length ? state.banks[0].id : null;
+  }
+  saveState(); render();
+}
+function submitExpense(){
+  const val = Number(state.amount);
+  if(!state.activeBankId || !val || val<=0) return;
+  const bank = state.banks.find(b=>b.id===state.activeBankId);
+  bank.balance -= val;
+  state.transactions.unshift({ id: uid(), bankId: state.activeBankId, amount: val, note: state.note.trim(), date: Date.now() });
+  state.amount = ""; state.note = "";
+  saveState(); render();
+  showToast("ثبت شد و از موجودی کم شد");
+}
+function undoLast(){
+  if(!state.transactions.length) return;
+  const last = state.transactions.shift();
+  const bank = state.banks.find(b=>b.id===last.bankId);
+  if(bank) bank.balance += last.amount;
+  saveState(); render();
+  showToast("آخرین تراکنش برگشت خورد");
+}
+function exportData(){
+  const payload = { app:"money-widget", version:1, exportedAt: new Date().toISOString(), banks: state.banks, transactions: state.transactions };
+  const blob = new Blob([JSON.stringify(payload,null,2)], { type:"application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `money-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast("فایل پشتیبان دانلود شد");
+}
+function handleImportFile(file){
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = JSON.parse(String(reader.result));
+      if(!Array.isArray(data.banks) || !Array.isArray(data.transactions)) throw new Error("bad shape");
+      state.banks = data.banks;
+      state.transactions = data.transactions;
+      state.activeBankId = data.banks.length ? data.banks[0].id : null;
+      saveState(); render();
+      showToast("داده‌ها با موفقیت بارگذاری شد");
+    }catch(e){ showToast("فایل معتبر نیست"); }
+  };
+  reader.readAsText(file);
+}
+
+// ---------- render ----------
+function render(){
+  const app = document.getElementById("app");
+  const activeBank = state.banks.find(b=>b.id===state.activeBankId);
+  const total = state.banks.reduce((s,b)=>s+b.balance,0);
+
+  const cardsHtml = state.banks.map(b=>{
+    const pal = paletteFor(b.color);
+    const active = b.id===state.activeBankId;
+    return `
+      <button class="bank-card ${active?'active':''}" data-select-bank="${b.id}" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});">
+        <div class="top">
+          <span style="color:rgba(255,255,255,.85)">${ICONS.bank}</span>
+          ${active?`<span style="color:#F3EFE6">${ICONS.check}</span>`:''}
+        </div>
+        <div>
+          <div class="name">${esc(b.name)}</div>
+          <div class="balance">${fmt(b.balance)}</div>
+        </div>
+      </button>`;
+  }).join("");
+
+  const quickAddHtml = state.banks.length ? `
+    <div class="card">
+      <div class="title">ثبت خرید از «${esc(activeBank?activeBank.name:'')}»</div>
+      <input class="amount-input" inputmode="numeric" placeholder="مبلغ خرید (تومان)" id="amountInput" value="${esc(state.amount)}" />
+      <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="noteInput" value="${esc(state.note)}" />
+      <button class="submit-btn" id="submitBtn" ${(!state.amount || Number(state.amount)<=0)?'disabled':''}>کم کن از موجودی</button>
+      ${activeBank && state.amount ? `<div class="after-note">مانده بعد از این خرید: <b>${fmt(activeBank.balance - (Number(state.amount)||0))} تومان</b></div>` : ''}
+    </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی خرید ثبت کنی.</div>`;
+
+  const txHtml = state.transactions.length ? state.transactions.map(t=>{
+    const bank = state.banks.find(b=>b.id===t.bankId);
+    const pal = paletteFor(bank?bank.color:null);
+    return `
+      <div class="tx">
+        <div class="left">
+          <div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>
+          <div>
+            <div class="note">${esc(t.note || "بدون توضیح")}</div>
+            <div class="meta">${esc(bank?bank.name:"بانک حذف‌شده")} · ${fmtDate(t.date)}</div>
+          </div>
+        </div>
+        <div class="amt">-${fmt(t.amount)}</div>
+      </div>`;
+  }).join("") : `<div class="empty">هنوز خریدی ثبت نشده.</div>`;
+
+  app.innerHTML = `
+    <div class="header">
+      <div>
+        <div class="label">مجموع موجودی</div>
+        <div class="total">${fmt(total)} <span class="unit">تومان</span></div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" id="importBtn" title="بارگذاری بک‌آپ">${ICONS.upload}</button>
+        <button class="icon-btn" id="exportBtn" title="گرفتن بک‌آپ">${ICONS.download}</button>
+        <input type="file" accept="application/json" id="fileInput" style="display:none" />
+      </div>
+    </div>
+
+    <div class="cards">
+      ${cardsHtml}
+      <button class="add-card" id="openAddBank">${ICONS.plus}<span>بانک جدید</span></button>
+    </div>
+
+    ${quickAddHtml}
+
+    <div class="history">
+      <div class="head">
+        <div class="title">تراکنش‌های اخیر</div>
+        ${state.transactions.length ? `<button class="undo-btn" id="undoBtn">${ICONS.undo} برگشت آخرین</button>` : ''}
+      </div>
+      ${txHtml}
+    </div>
+
+    ${state.showAddBank ? renderAddBankModal() : ''}
+    <div class="toast" id="toast"></div>
+  `;
+
+  attachEvents();
+}
+
+function renderAddBankModal(){
+  const swatches = PALETTE.map(p=>`
+    <button class="swatch ${state._newColor===p.id?'active':''}" data-swatch="${p.id}" style="background:linear-gradient(135deg, ${p.from}, ${p.to});" title="${p.label}"></button>
+  `).join("");
+  const manageRows = state.banks.map(b=>`
+    <div class="bank-manage-row">
+      <span>${esc(b.name)}</span>
+      <button data-delete-bank="${b.id}">${ICONS.trash}</button>
+    </div>
+  `).join("");
+
+  return `
+  <div class="overlay" id="overlay">
+    <div class="sheet" id="sheet">
+      <div class="head">
+        <div class="title">بانک جدید</div>
+        <button class="close-btn" id="closeModal">${ICONS.x}</button>
+      </div>
+      <input class="note-input" placeholder="اسم بانک (مثلاً ملت، بلوبانک)" id="newBankName" value="${esc(state._newName||'')}" />
+      <input class="amount-input" inputmode="numeric" placeholder="موجودی فعلی (تومان)" id="newBankBalance" value="${esc(state._newBalance||'')}" />
+      <div style="font-size:12.5px;color:#8b93a7;margin:12px 0 8px;">رنگ کارت</div>
+      <div class="palette">${swatches}</div>
+      <button class="submit-btn" id="addBankBtn" ${!(state._newName&&state._newName.trim())?'disabled':''}>${ICONS.plus} اضافه کن</button>
+      ${state.banks.length ? `<div style="margin-top:20px;"><div style="font-size:12px;color:#6b7386;margin-bottom:8px;">مدیریت بانک‌ها</div>${manageRows}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function attachEvents(){
+  document.querySelectorAll('[data-select-bank]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.activeBankId = el.getAttribute('data-select-bank'); render(); });
+  });
+
+  const amountInput = document.getElementById('amountInput');
+  if(amountInput){
+    amountInput.addEventListener('input', e=>{
+      state.amount = toEnglishDigits(e.target.value);
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = !state.amount || Number(state.amount)<=0;
+      const activeBank = state.banks.find(b=>b.id===state.activeBankId);
+      let note = document.querySelector('.after-note');
+      const parent = document.querySelector('.card');
+      if(activeBank && state.amount){
+        const val = `<div class="after-note">مانده بعد از این خرید: <b>${fmt(activeBank.balance - (Number(state.amount)||0))} تومان</b></div>`;
+        if(note) note.outerHTML = val; else parent.insertAdjacentHTML('beforeend', val);
+      } else if(note){ note.remove(); }
+      // keep caret at end without full rerender
+      const pos = e.target.value.length;
+      e.target.setSelectionRange(pos,pos);
+    });
+  }
+  const noteInput = document.getElementById('noteInput');
+  if(noteInput) noteInput.addEventListener('input', e=>{ state.note = e.target.value; });
+
+  const submitBtn = document.getElementById('submitBtn');
+  if(submitBtn) submitBtn.addEventListener('click', submitExpense);
+
+  const undoBtn = document.getElementById('undoBtn');
+  if(undoBtn) undoBtn.addEventListener('click', undoLast);
+
+  const openAddBank = document.getElementById('openAddBank');
+  if(openAddBank) openAddBank.addEventListener('click', ()=>{ state.showAddBank = true; state._newColor = PALETTE[0].id; state._newName=''; state._newBalance=''; render(); });
+
+  const closeModal = document.getElementById('closeModal');
+  if(closeModal) closeModal.addEventListener('click', ()=>{ state.showAddBank=false; render(); });
+  const overlay = document.getElementById('overlay');
+  if(overlay) overlay.addEventListener('click', (e)=>{ if(e.target.id==='overlay'){ state.showAddBank=false; render(); } });
+
+  const newBankName = document.getElementById('newBankName');
+  if(newBankName) newBankName.addEventListener('input', e=>{
+    state._newName = e.target.value;
+    const btn = document.getElementById('addBankBtn');
+    if(btn) btn.disabled = !state._newName.trim();
+  });
+  const newBankBalance = document.getElementById('newBankBalance');
+  if(newBankBalance) newBankBalance.addEventListener('input', e=>{ state._newBalance = toEnglishDigits(e.target.value); e.target.value = state._newBalance; });
+
+  document.querySelectorAll('[data-swatch]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state._newColor = el.getAttribute('data-swatch'); render(); });
+  });
+
+  const addBankBtn = document.getElementById('addBankBtn');
+  if(addBankBtn) addBankBtn.addEventListener('click', ()=>{
+    if(state._newName && state._newName.trim()) addBank(state._newName.trim(), state._newBalance, state._newColor||PALETTE[0].id);
+  });
+
+  document.querySelectorAll('[data-delete-bank]').forEach(el=>{
+    el.addEventListener('click', ()=>deleteBank(el.getAttribute('data-delete-bank')));
+  });
+
+  const exportBtn = document.getElementById('exportBtn');
+  if(exportBtn) exportBtn.addEventListener('click', exportData);
+  const importBtn = document.getElementById('importBtn');
+  const fileInput = document.getElementById('fileInput');
+  if(importBtn && fileInput){
+    importBtn.addEventListener('click', ()=>fileInput.click());
+    fileInput.addEventListener('change', e=>{
+      const file = e.target.files && e.target.files[0];
+      if(file) handleImportFile(file);
+      e.target.value = '';
+    });
+  }
+}
+
+// ---------- init ----------
+loadState();
+render();
+
+// register service worker so the browser offers a real "Install app" prompt
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
