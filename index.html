@@ -62,6 +62,9 @@
   .tx .amt { font-size:14px; font-weight:700; color:#D9764F; }
   .tx .amt.income { color:#2E9E86; }
   .tx .amt.transfer { color:#C99A3E; }
+  .tx .right { display:flex; align-items:center; gap:6px; }
+  .tx-icon-btn { width:26px; height:26px; border-radius:8px; background:#0F1420; display:flex; align-items:center; justify-content:center; color:#8b93a7; flex:0 0 auto; }
+  .tx-icon-btn.danger { color:#D9764F; }
   
   .tabs { display:flex; gap:8px; padding:12px 18px; background:#171b28; overflow-x:auto; }
   .tab { flex:0 0 auto; padding:8px 14px; border-radius:8px; background:#0F1420; color:#8b93a7; font-size:13px; font-weight:500; border:none; cursor:pointer; white-space:nowrap; }
@@ -134,6 +137,35 @@ function addMonths(date, months){
 function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
+const PERSIAN_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
+function addDays(date, n){ const d = new Date(date); d.setDate(d.getDate()+n); return d; }
+function toJalaliYMD(date){
+  const parts = new Intl.DateTimeFormat("en-US-u-ca-persian",{year:"numeric",month:"numeric",day:"numeric"}).formatToParts(date);
+  let y,m,d;
+  for(const p of parts){ if(p.type==='year') y=+p.value; if(p.type==='month') m=+p.value; if(p.type==='day') d=+p.value; }
+  return {y,m,d};
+}
+function jalaliTupleNum(date){ const t = toJalaliYMD(date); return t.y*10000 + t.m*100 + t.d; }
+function getTodayJalali(){ return toJalaliYMD(new Date()); }
+// converts a Jalali (Shamsi) date to a Gregorian JS Date using binary search over Intl's persian calendar
+function jalaliToGregorian(jy, jm, jd){
+  const target = jy*10000 + jm*100 + jd;
+  const base = new Date(jy+620, 0, 1);
+  let lo = 0, hi = 1200;
+  while(lo < hi){
+    const mid = Math.floor((lo+hi)/2);
+    const val = jalaliTupleNum(addDays(base, mid));
+    if(val < target) lo = mid+1; else hi = mid;
+  }
+  return addDays(base, lo);
+}
+function jalaliMonthLength(jy, jm){
+  const d1 = jalaliToGregorian(jy, jm, 1);
+  const njy = jm===12 ? jy+1 : jy;
+  const njm = jm===12 ? 1 : jm+1;
+  const d2 = jalaliToGregorian(njy, njm, 1);
+  return Math.round((d2 - d1) / 86400000);
+}
 function getNoteSuggestions(){
   const seen = new Set();
   const list = [];
@@ -153,6 +185,7 @@ const ICONS = {
   x:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
   bank:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18M3 10l9-7 9 7M4 10v9M20 10v9M8 10v9M12 10v9M16 10v9"/></svg>',
+  pencil:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   download:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
   upload:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
   transfer:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg>',
@@ -169,7 +202,12 @@ function loadState(){
       const data = JSON.parse(raw);
       state.banks = data.banks || [];
       state.transactions = data.transactions || [];
-      state.installments = data.installments || [];
+      state.installments = (data.installments || []).map(inst=>{
+        if(Array.isArray(inst.paidInstallments)){
+          return { id: inst.id, name: inst.name||'', amount: inst.amount, startDate: inst.startDate, installmentCount: inst.installmentCount, paidCount: inst.paidInstallments.length };
+        }
+        return { name:'', paidCount:0, ...inst };
+      });
       if(state.banks.length) state.activeBankId = state.banks[0].id;
     }
   }catch(e){}
@@ -216,6 +254,60 @@ function submitTransaction(){
   saveState(); render();
   showToast(mode === "expense" ? "ثبت شد و از موجودی کم شد" : "به موجودی اضافه شد");
 }
+function openEditTx(id){
+  state.editingTxId = id;
+  state._editAmount = null;
+  state._editNote = null;
+  render();
+}
+function closeEditTx(){
+  state.editingTxId = null;
+  render();
+}
+function saveEditTx(){
+  const t = state.transactions.find(x=>x.id===state.editingTxId);
+  if(!t) return;
+  const newAmount = Number(state._editAmount!=null ? state._editAmount : t.amount);
+  const newNote = state._editNote!=null ? state._editNote : (t.note||'');
+  if(!newAmount || newAmount<=0){ showToast("مبلغ معتبر نیست"); return; }
+  const oldAmount = t.amount;
+  if(t.type === "transfer"){
+    const fromBank = state.banks.find(b=>b.id===t.fromBankId);
+    const toBank = state.banks.find(b=>b.id===t.toBankId);
+    if(fromBank) fromBank.balance += oldAmount - newAmount;
+    if(toBank) toBank.balance += newAmount - oldAmount;
+  } else {
+    const bank = state.banks.find(b=>b.id===t.bankId);
+    if(bank){
+      if(t.type==='expense') bank.balance += oldAmount - newAmount;
+      else bank.balance += newAmount - oldAmount;
+    }
+  }
+  t.amount = newAmount;
+  t.note = newNote.trim();
+  state.editingTxId = null; state._editAmount = null; state._editNote = null;
+  saveState(); render();
+  showToast("تراکنش ویرایش شد");
+}
+function deleteTx(id){
+  const idx = state.transactions.findIndex(t=>t.id===id);
+  if(idx===-1) return;
+  const t = state.transactions[idx];
+  if(t.type === "transfer"){
+    const fromBank = state.banks.find(b=>b.id===t.fromBankId);
+    const toBank = state.banks.find(b=>b.id===t.toBankId);
+    if(fromBank) fromBank.balance += t.amount;
+    if(toBank) toBank.balance -= t.amount;
+  } else {
+    const bank = state.banks.find(b=>b.id===t.bankId);
+    if(bank){
+      if(t.type==='expense') bank.balance += t.amount; else bank.balance -= t.amount;
+    }
+  }
+  state.transactions.splice(idx,1);
+  saveState(); render();
+  showToast("تراکنش حذف شد");
+}
 function submitTransfer(){
   const fromId = state._transferFrom;
   const toId = state._transferTo;
@@ -258,28 +350,30 @@ function handleImportFile(file){
 }
 
 // ---------- installments ----------
-function addInstallment(amount, startDate, installmentCount){
+function addInstallment(name, amount, startDate, installmentCount){
   const inst = {
     id: uid(),
+    name: (name||"").trim(),
     amount: Number(amount)||0,
     startDate: new Date(startDate).getTime(),
-    installmentCount: Number(installmentCount)||12,
-    paidInstallments: []
+    installmentCount: Math.max(1, Number(installmentCount)||1),
+    paidCount: 0
   };
   state.installments.push(inst);
   saveState(); render();
   showToast("قسط اضافه شد");
 }
-function toggleInstallmentPayment(installmentId, monthIndex){
+function payNextInstallment(installmentId){
   const inst = state.installments.find(i=>i.id===installmentId);
   if(!inst) return;
-  
-  if(inst.paidInstallments.includes(monthIndex)){
-    inst.paidInstallments = inst.paidInstallments.filter(m=>m!==monthIndex);
-  } else {
-    inst.paidInstallments.push(monthIndex);
-  }
-  
+  inst.paidCount = Math.min(inst.installmentCount, (inst.paidCount||0) + 1);
+  saveState(); render();
+  showToast("قسط پرداخت‌شده ثبت شد");
+}
+function undoLastInstallmentPayment(installmentId){
+  const inst = state.installments.find(i=>i.id===installmentId);
+  if(!inst) return;
+  inst.paidCount = Math.max(0, (inst.paidCount||0) - 1);
   saveState(); render();
 }
 function deleteInstallment(id){
@@ -327,6 +421,10 @@ function render(){
     </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی ثبت کنی.</div>`;
 
   // ---------- build transaction history ----------
+  const txActionsHtml = (t) => `
+    <button class="tx-icon-btn" data-edit-tx="${t.id}" title="ویرایش">${ICONS.pencil}</button>
+    <button class="tx-icon-btn danger" data-delete-tx="${t.id}" title="حذف">${ICONS.trash}</button>`;
+
   const txHtml = state.transactions.length ? state.transactions.map(t=>{
     if(t.type === "transfer"){
       const fromBank = state.banks.find(b=>b.id===t.fromBankId);
@@ -341,7 +439,10 @@ function render(){
               <div class="meta">${esc(fromBank?fromBank.name:"حذف‌شده")} ← ${esc(toBank?toBank.name:"حذف‌شده")} · ${fmtDate(t.date)}</div>
             </div>
           </div>
-          <div class="amt transfer">${fmt(t.amount)}</div>
+          <div class="right">
+            <div class="amt transfer">${fmt(t.amount)}</div>
+            ${txActionsHtml(t)}
+          </div>
         </div>`;
     }
     const bank = state.banks.find(b=>b.id===t.bankId);
@@ -356,7 +457,10 @@ function render(){
             <div class="meta">${esc(bank?bank.name:"بانک حذف‌شده")} · ${fmtDate(t.date)}</div>
           </div>
         </div>
-        <div class="amt ${isIncome?'income':''}">${isIncome?'+':'-'}${fmt(t.amount)}</div>
+        <div class="right">
+          <div class="amt ${isIncome?'income':''}">${isIncome?'+':'-'}${fmt(t.amount)}</div>
+          ${txActionsHtml(t)}
+        </div>
       </div>`;
   }).join("") : `<div class="empty">هنوز تراکنشی ثبت نشده.</div>`;
 
@@ -372,71 +476,98 @@ function render(){
   ` : `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">اول یه بانک اضافه کن.</div>`;
 
   // ---------- transfer tab content ----------
+  // make sure from/to are always valid bank ids before rendering (fixes transfer silently failing)
+  if(state.banks.length > 1){
+    if(!state._transferFromTab || !state.banks.find(b=>b.id===state._transferFromTab)){
+      state._transferFromTab = state.banks[0].id;
+    }
+    if(!state._transferToTab || !state.banks.find(b=>b.id===state._transferToTab) || state._transferToTab===state._transferFromTab){
+      const alt = state.banks.find(b=>b.id!==state._transferFromTab);
+      state._transferToTab = alt ? alt.id : state.banks[0].id;
+    }
+  }
   const transferContent = state.banks.length > 1 ? `
     <div class="card">
       <div class="title">انتقال از کارت به کارت</div>
       <div class="field-label">از کدام بانک؟</div>
       <select class="note-input" id="transferFromTab">
-        ${state.banks.map(b=>`<option value="${b.id}" ${b.id===state._transferFromTab?'selected':''}>${esc(b.name)}</option>`).join("")}
+        ${state.banks.map(b=>`<option value="${b.id}" ${b.id===state._transferFromTab?'selected':''}>${esc(b.name)} (${fmt(b.balance)})</option>`).join("")}
       </select>
       <div class="field-label">به کدام بانک؟</div>
       <select class="note-input" id="transferToTab">
-        ${state.banks.map(b=>`<option value="${b.id}" ${b.id===state._transferToTab?'selected':''}>${esc(b.name)}</option>`).join("")}
+        ${state.banks.map(b=>`<option value="${b.id}" ${b.id===state._transferToTab?'selected':''}>${esc(b.name)} (${fmt(b.balance)})</option>`).join("")}
       </select>
       <input class="amount-input" inputmode="numeric" placeholder="مبلغ انتقال (تومان)" id="transferAmountTab" value="${esc(state._transferAmountTab||'')}" />
       <input class="note-input" placeholder="توضیح (اختیاری)" id="transferNoteTab" value="${esc(state._transferNoteTab||'')}" />
-      <button class="submit-btn" id="submitTransferTabBtn" ${(!state._transferAmountTab || state._transferFromTab === state._transferToTab)?'disabled':''}>${ICONS.transfer} انتقال دادن</button>
+      <button class="submit-btn" id="submitTransferTabBtn" ${(!state._transferAmountTab || Number(state._transferAmountTab)<=0 || state._transferFromTab === state._transferToTab)?'disabled':''}>${ICONS.transfer} انتقال دادن</button>
     </div>
   ` : `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">برای انتقال، حداقل دو بانک لازم است.</div>`;
 
   // ---------- installments tab content ----------
+  const todayJ = getTodayJalali();
+  if(!state._instYear) state._instYear = todayJ.y;
+  if(!state._instMonth) state._instMonth = todayJ.m;
+  if(!state._instDay) state._instDay = todayJ.d;
+  const instMonthLen = jalaliMonthLength(state._instYear, state._instMonth);
+  if(state._instDay > instMonthLen) state._instDay = instMonthLen;
+
+  const instYearOptions = Array.from({length:8},(_,i)=> todayJ.y-1+i)
+    .map(y=>`<option value="${y}" ${state._instYear===y?'selected':''}>${y}</option>`).join("");
+  const instMonthOptions = PERSIAN_MONTHS
+    .map((name,i)=>`<option value="${i+1}" ${state._instMonth===(i+1)?'selected':''}>${name}</option>`).join("");
+  const instDayOptions = Array.from({length:instMonthLen},(_,i)=>i+1)
+    .map(d=>`<option value="${d}" ${state._instDay===d?'selected':''}>${d}</option>`).join("");
+
   const installmentsContent = `
     <div class="card">
       <div class="title">قسط جدید</div>
-      <input class="amount-input" inputmode="numeric" placeholder="مبلغ قسط (تومان)" id="instAmount" value="${esc(state._instAmount||'')}" />
-      <div class="field-label">تاریخ شروع</div>
-      <input class="note-input" type="date" id="instDate" value="${state._instDate||new Date().toISOString().split('T')[0]}" />
-      <div class="field-label">تعداد اقساط</div>
-      <select class="note-input" id="instCount">
-        <option value="3" ${state._instCount==='3'?'selected':''}>3 ماه</option>
-        <option value="6" ${state._instCount==='6'?'selected':''}>6 ماه</option>
-        <option value="12" ${state._instCount==='12'?'selected':''}>12 ماه</option>
-        <option value="24" ${state._instCount==='24'?'selected':''}>24 ماه</option>
-      </select>
-      <button class="submit-btn" id="submitInstBtn" ${!state._instAmount?'disabled':''}>اضافه کردن قسط</button>
+      <input class="note-input" placeholder="اسم قسط (مثلاً وام بانک ملی)" id="instName" value="${esc(state._instName||'')}" />
+      <input class="amount-input" inputmode="numeric" placeholder="مبلغ هر قسط (تومان)" id="instAmount" value="${esc(state._instAmount||'')}" />
+      <div class="field-label">تاریخ شروع (شمسی)</div>
+      <div style="display:flex; gap:8px;">
+        <select class="note-input" id="instYear" style="flex:1;">${instYearOptions}</select>
+        <select class="note-input" id="instMonth" style="flex:1;">${instMonthOptions}</select>
+        <select class="note-input" id="instDay" style="flex:1;">${instDayOptions}</select>
+      </div>
+      <div class="field-label">تعداد اقساط (ماه)</div>
+      <input class="note-input" inputmode="numeric" type="number" min="1" placeholder="مثلاً ۱، ۲، ۱۲ ..." id="instCount" value="${esc(state._instCount||'')}" />
+      <button class="submit-btn" id="submitInstBtn" ${(!state._instAmount || Number(state._instAmount)<=0 || !state._instCount || Number(state._instCount)<=0)?'disabled':''}>اضافه کردن قسط</button>
     </div>
     <div class="history">
       <div class="head">
         <div class="title">اقساط فعال</div>
       </div>
       ${state.installments.length ? state.installments.map(inst=>{
-        const installmentItems = [];
-        for(let i=0; i<inst.installmentCount; i++){
-          const dueDate = getInstallmentDueDate(inst, i);
-          const isPaid = inst.paidInstallments.includes(i);
-          installmentItems.push(`
+        const paidCount = inst.paidCount||0;
+        const remaining = inst.installmentCount - paidCount;
+        const isDone = remaining <= 0;
+        let bodyHtml;
+        if(isDone){
+          bodyHtml = `<div style="font-size:12.5px;color:#2E9E86;">✓ همه اقساط پرداخت شد</div>`;
+        } else {
+          const dueDate = getInstallmentDueDate(inst, paidCount);
+          bodyHtml = `
             <div class="install-checkbox">
-              <input type="checkbox" id="inst_${inst.id}_${i}" ${isPaid?'checked':''} data-inst-id="${inst.id}" data-month="${i}" />
-              <label for="inst_${inst.id}_${i}" style="flex:1;cursor:pointer;">
-                <div style="font-size:13px;color:#F3EFE6;">قسط ${i+1}: ${fmt(inst.amount)} تومان</div>
-                <div class="date">${fmtPersianDate(dueDate)}</div>
+              <input type="checkbox" id="inst_${inst.id}" data-inst-id="${inst.id}" />
+              <label for="inst_${inst.id}" style="flex:1;cursor:pointer;">
+                <div style="font-size:13px;color:#F3EFE6;">قسط ${paidCount+1} از ${inst.installmentCount}: ${fmt(inst.amount)} تومان</div>
+                <div class="date">سررسید: ${fmtPersianDate(dueDate)} · ${remaining} ماه مانده</div>
               </label>
             </div>
-          `);
+            ${paidCount>0 ? `<button data-undo-inst="${inst.id}" style="font-size:11.5px;color:#8b93a7;margin-top:2px;">↺ برگشت آخرین پرداخت</button>` : ''}
+          `;
         }
         return `
           <div class="installment-item">
             <div class="header">
               <div>
-                <div class="amount">${fmt(inst.amount)} تومان</div>
-                <div class="paid">کل: ${fmt(inst.amount * inst.installmentCount)}</div>
+                <div class="amount">${esc(inst.name || 'قسط بدون‌نام')}</div>
+                <div class="paid">${fmt(inst.amount)} × ${inst.installmentCount} = ${fmt(inst.amount * inst.installmentCount)} تومان</div>
               </div>
               <button style="color:#D9764F;" data-delete-inst="${inst.id}">${ICONS.trash}</button>
             </div>
-            <div class="date-info">شروع: ${fmtPersianDate(inst.startDate)} | تعداد: ${inst.installmentCount} ماه | پرداخت‌شده: ${inst.paidInstallments.length}/${inst.installmentCount}</div>
-            <div class="installment-progress">
-              ${installmentItems.join("")}
-            </div>
+            <div class="date-info">شروع: ${fmtPersianDate(inst.startDate)} | پرداخت‌شده: ${paidCount}/${inst.installmentCount}</div>
+            ${bodyHtml}
           </div>
         `;
       }).join("") : `<div class="empty">هنوز قسطی ثبت نشده.</div>`}
@@ -474,6 +605,7 @@ function render(){
     ${tabContent}
 
     ${state.showAddBank ? renderAddBankModal() : ''}
+    ${state.editingTxId ? renderEditTxModal() : ''}
     <datalist id="noteSuggestions">
       ${getNoteSuggestions().map(n=>`<option value="${esc(n)}"></option>`).join("")}
     </datalist>
@@ -504,6 +636,25 @@ function renderTransferModal(){
       <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="transferNote" list="noteSuggestions" value="${esc(state._transferNote||'')}" />
       ${fromId===toId ? `<div class="field-label" style="color:#D9764F;margin-bottom:10px;">بانک مبدا و مقصد نباید یکی باشن</div>` : ''}
       <button class="submit-btn" id="submitTransferBtn" ${!canSubmit?'disabled':''}>انتقال بده</button>
+    </div>
+  </div>`;
+}
+
+function renderEditTxModal(){
+  const t = state.transactions.find(x=>x.id===state.editingTxId);
+  if(!t) return '';
+  return `
+  <div class="overlay" id="editTxOverlay">
+    <div class="sheet">
+      <div class="head">
+        <div class="title">ویرایش تراکنش</div>
+        <button class="close-btn" id="closeEditTx">${ICONS.x}</button>
+      </div>
+      <div class="field-label">مبلغ (تومان)</div>
+      <input class="amount-input" inputmode="numeric" id="editTxAmount" value="${esc(state._editAmount!=null ? state._editAmount : t.amount)}" />
+      <div class="field-label">توضیح</div>
+      <input class="note-input" id="editTxNote" value="${esc(state._editNote!=null ? state._editNote : (t.note||''))}" />
+      <button class="submit-btn" id="saveEditTxBtn">ذخیره تغییرات</button>
     </div>
   </div>`;
 }
@@ -665,10 +816,12 @@ function attachEvents(){
   const submitTransferTabBtn = document.getElementById('submitTransferTabBtn');
   if(submitTransferTabBtn) submitTransferTabBtn.addEventListener('click', ()=>{
     if(!state._transferFromTab || !state._transferToTab || !state._transferAmountTab || Number(state._transferAmountTab)<=0) return;
+    if(state._transferFromTab === state._transferToTab){ showToast("بانک مبدا و مقصد نباید یکی باشن"); return; }
     const fromBank = state.banks.find(b=>b.id===state._transferFromTab);
     const toBank = state.banks.find(b=>b.id===state._transferToTab);
-    if(!fromBank || !toBank || fromBank.balance < Number(state._transferAmountTab)) return;
-    
+    if(!fromBank || !toBank){ showToast("بانک انتخاب‌شده معتبر نیست"); return; }
+    if(fromBank.balance < Number(state._transferAmountTab)){ showToast("موجودی بانک مبدا کافی نیست"); return; }
+
     const amt = Number(state._transferAmountTab);
     fromBank.balance -= amt;
     toBank.balance += amt;
@@ -691,31 +844,54 @@ function attachEvents(){
   });
 
   // ---------- installments ----------
+  function refreshInstSubmitState(){
+    const btn = document.getElementById('submitInstBtn');
+    if(btn) btn.disabled = !state._instAmount || Number(state._instAmount)<=0 || !state._instCount || Number(state._instCount)<=0;
+  }
+  const instName = document.getElementById('instName');
+  if(instName) instName.addEventListener('input', e=>{ state._instName = e.target.value; });
   const instAmount = document.getElementById('instAmount');
   if(instAmount) instAmount.addEventListener('input', e=>{
     state._instAmount = toEnglishDigits(e.target.value);
-    const btn = document.getElementById('submitInstBtn');
-    if(btn) btn.disabled = !state._instAmount || Number(state._instAmount)<=0;
+    e.target.value = state._instAmount;
+    refreshInstSubmitState();
   });
-  const instDate = document.getElementById('instDate');
-  if(instDate) instDate.addEventListener('change', e=>{ state._instDate = e.target.value; });
+  const instYear = document.getElementById('instYear');
+  if(instYear) instYear.addEventListener('change', e=>{ state._instYear = parseInt(e.target.value); render(); });
+  const instMonth = document.getElementById('instMonth');
+  if(instMonth) instMonth.addEventListener('change', e=>{ state._instMonth = parseInt(e.target.value); render(); });
+  const instDay = document.getElementById('instDay');
+  if(instDay) instDay.addEventListener('change', e=>{ state._instDay = parseInt(e.target.value); render(); });
   const instCount = document.getElementById('instCount');
-  if(instCount) instCount.addEventListener('change', e=>{ state._instCount = e.target.value; });
+  if(instCount) instCount.addEventListener('input', e=>{
+    state._instCount = toEnglishDigits(e.target.value);
+    e.target.value = state._instCount;
+    refreshInstSubmitState();
+  });
   const submitInstBtn = document.getElementById('submitInstBtn');
   if(submitInstBtn) submitInstBtn.addEventListener('click', ()=>{
     if(!state._instAmount || Number(state._instAmount)<=0) return;
-    addInstallment(state._instAmount, state._instDate || new Date(), state._instCount || 12);
+    if(!state._instCount || Number(state._instCount)<=0) return;
+    const startDate = jalaliToGregorian(state._instYear, state._instMonth, state._instDay).getTime();
+    addInstallment(state._instName, state._instAmount, startDate, state._instCount);
     state._instAmount = '';
-    state._instDate = '';
+    state._instName = '';
     state._instCount = '';
+    const t = getTodayJalali();
+    state._instYear = t.y; state._instMonth = t.m; state._instDay = t.d;
     render();
   });
 
-  // ---------- installment checkboxes ----------
+  // ---------- installment payment checkbox (pays the next due month) ----------
   document.querySelectorAll('[data-inst-id]').forEach(el=>{
     el.addEventListener('change', ()=>{
-      toggleInstallmentPayment(el.getAttribute('data-inst-id'), parseInt(el.getAttribute('data-month')));
+      if(el.checked) payNextInstallment(el.getAttribute('data-inst-id'));
     });
+  });
+
+  // ---------- undo last installment payment ----------
+  document.querySelectorAll('[data-undo-inst]').forEach(el=>{
+    el.addEventListener('click', ()=> undoLastInstallmentPayment(el.getAttribute('data-undo-inst')));
   });
 
   // ---------- delete installment ----------
@@ -724,6 +900,29 @@ function attachEvents(){
       if(confirm('این قسط حذف شود؟')) deleteInstallment(el.getAttribute('data-delete-inst'));
     });
   });
+
+  // ---------- edit / delete transaction ----------
+  document.querySelectorAll('[data-edit-tx]').forEach(el=>{
+    el.addEventListener('click', ()=> openEditTx(el.getAttribute('data-edit-tx')));
+  });
+  document.querySelectorAll('[data-delete-tx]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if(confirm('این تراکنش حذف شود؟')) deleteTx(el.getAttribute('data-delete-tx'));
+    });
+  });
+  const closeEditTxBtn = document.getElementById('closeEditTx');
+  if(closeEditTxBtn) closeEditTxBtn.addEventListener('click', closeEditTx);
+  const editTxOverlay = document.getElementById('editTxOverlay');
+  if(editTxOverlay) editTxOverlay.addEventListener('click', e=>{ if(e.target.id==='editTxOverlay') closeEditTx(); });
+  const editTxAmount = document.getElementById('editTxAmount');
+  if(editTxAmount) editTxAmount.addEventListener('input', e=>{
+    state._editAmount = toEnglishDigits(e.target.value);
+    e.target.value = state._editAmount;
+  });
+  const editTxNote = document.getElementById('editTxNote');
+  if(editTxNote) editTxNote.addEventListener('input', e=>{ state._editNote = e.target.value; });
+  const saveEditTxBtn = document.getElementById('saveEditTxBtn');
+  if(saveEditTxBtn) saveEditTxBtn.addEventListener('click', saveEditTx);
 }
 
 // ---------- init ----------
