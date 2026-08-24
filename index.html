@@ -40,6 +40,11 @@
   .card .title { font-size:13px; color:#8b93a7; margin-bottom:10px; }
   .amount-input { width:100%; background:#0F1420; border:1px solid #2a3040; border-radius:10px; padding:12px 14px; font-size:17px; font-weight:700; color:#F3EFE6; margin-bottom:10px; outline:none; text-align:right; }
   .note-input { width:100%; background:#0F1420; border:1px solid #2a3040; border-radius:10px; padding:11px 14px; font-size:13.5px; color:#F3EFE6; margin-bottom:10px; outline:none; text-align:right; }
+  select.note-input { appearance:none; -webkit-appearance:none; }
+  .field-label { font-size:12.5px; color:#8b93a7; margin-bottom:6px; }
+  .mode-toggle { display:flex; gap:8px; margin-bottom:12px; background:#0F1420; padding:4px; border-radius:10px; }
+  .mode-btn { flex:1; padding:8px 0; border-radius:8px; font-size:13px; color:#8b93a7; text-align:center; }
+  .mode-btn.active { background:#262c3d; color:#F3EFE6; font-weight:600; }
   .submit-btn { width:100%; background:linear-gradient(135deg,#C99A3E,#8C6A1F); border-radius:10px; padding:13px 14px; font-size:14.5px; font-weight:700; color:#0F1420; }
   .submit-btn:disabled { opacity:.45; }
   .after-note { font-size:12.5px; color:#8b93a7; margin-top:10px; text-align:center; }
@@ -56,6 +61,8 @@
   .tx .note { font-size:13.5px; color:#F3EFE6; }
   .tx .meta { font-size:11.5px; color:#6b7386; }
   .tx .amt { font-size:14px; font-weight:700; color:#D9764F; }
+  .tx .amt.income { color:#2E9E86; }
+  .tx .amt.transfer { color:#C99A3E; }
 
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:flex-end; z-index:50; }
   .sheet { width:100%; background:#151926; border-radius:20px 20px 0 0; padding:20px 18px 28px; max-height:85vh; overflow-y:auto; }
@@ -116,11 +123,12 @@ const ICONS = {
   bank:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18M3 10l9-7 9 7M4 10v9M20 10v9M8 10v9M12 10v9M16 10v9"/></svg>',
   download:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
   upload:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
+  transfer:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg>',
 };
 
 // ---------- state ----------
 const STORAGE_KEY = "money-widget-data-v1";
-let state = { banks: [], transactions: [], activeBankId: null, showAddBank: false, amount: "", note: "" };
+let state = { banks: [], transactions: [], activeBankId: null, showAddBank: false, showTransfer: false, mode: "expense", amount: "", note: "" };
 
 function loadState(){
   try{
@@ -164,21 +172,47 @@ function deleteBank(id){
   }
   saveState(); render();
 }
-function submitExpense(){
+function submitTransaction(){
   const val = Number(state.amount);
   if(!state.activeBankId || !val || val<=0) return;
   const bank = state.banks.find(b=>b.id===state.activeBankId);
-  bank.balance -= val;
-  state.transactions.unshift({ id: uid(), bankId: state.activeBankId, amount: val, note: state.note.trim(), date: Date.now() });
+  const mode = state.mode || "expense";
+  if(mode === "expense") bank.balance -= val; else bank.balance += val;
+  state.transactions.unshift({ id: uid(), type: mode, bankId: state.activeBankId, amount: val, note: state.note.trim(), date: Date.now() });
   state.amount = ""; state.note = "";
   saveState(); render();
-  showToast("ثبت شد و از موجودی کم شد");
+  showToast(mode === "expense" ? "ثبت شد و از موجودی کم شد" : "به موجودی اضافه شد");
+}
+function submitTransfer(){
+  const fromId = state._transferFrom;
+  const toId = state._transferTo;
+  const val = Number(state._transferAmount);
+  if(!fromId || !toId || fromId === toId || !val || val<=0) return;
+  const fromBank = state.banks.find(b=>b.id===fromId);
+  const toBank = state.banks.find(b=>b.id===toId);
+  if(!fromBank || !toBank) return;
+  fromBank.balance -= val;
+  toBank.balance += val;
+  state.transactions.unshift({ id: uid(), type: "transfer", fromBankId: fromId, toBankId: toId, amount: val, note: (state._transferNote||"").trim(), date: Date.now() });
+  state.showTransfer = false; state._transferAmount = ""; state._transferNote = "";
+  saveState(); render();
+  showToast("انتقال انجام شد");
 }
 function undoLast(){
   if(!state.transactions.length) return;
   const last = state.transactions.shift();
-  const bank = state.banks.find(b=>b.id===last.bankId);
-  if(bank) bank.balance += last.amount;
+  if(last.type === "transfer"){
+    const fromBank = state.banks.find(b=>b.id===last.fromBankId);
+    const toBank = state.banks.find(b=>b.id===last.toBankId);
+    if(fromBank) fromBank.balance += last.amount;
+    if(toBank) toBank.balance -= last.amount;
+  } else if(last.type === "income"){
+    const bank = state.banks.find(b=>b.id===last.bankId);
+    if(bank) bank.balance -= last.amount;
+  } else {
+    const bank = state.banks.find(b=>b.id===last.bankId);
+    if(bank) bank.balance += last.amount;
+  }
   saveState(); render();
   showToast("آخرین تراکنش برگشت خورد");
 }
@@ -230,30 +264,52 @@ function render(){
       </button>`;
   }).join("");
 
+  const mode = state.mode || "expense";
   const quickAddHtml = state.banks.length ? `
     <div class="card">
-      <div class="title">ثبت خرید از «${esc(activeBank?activeBank.name:'')}»</div>
-      <input class="amount-input" inputmode="numeric" placeholder="مبلغ خرید (تومان)" id="amountInput" value="${esc(state.amount)}" />
+      <div class="mode-toggle">
+        <button class="mode-btn ${mode==='expense'?'active':''}" data-mode="expense">خرج کردم</button>
+        <button class="mode-btn ${mode==='income'?'active':''}" data-mode="income">واریز کردم</button>
+      </div>
+      <div class="title">${mode==='expense' ? `ثبت خرید از «${esc(activeBank?activeBank.name:'')}»` : `افزایش موجودی «${esc(activeBank?activeBank.name:'')}»`}</div>
+      <input class="amount-input" inputmode="numeric" placeholder="${mode==='expense'?'مبلغ خرید (تومان)':'مبلغ واریزی (تومان)'}" id="amountInput" value="${esc(state.amount)}" />
       <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="noteInput" value="${esc(state.note)}" />
-      <button class="submit-btn" id="submitBtn" ${(!state.amount || Number(state.amount)<=0)?'disabled':''}>کم کن از موجودی</button>
-      ${activeBank && state.amount ? `<div class="after-note">مانده بعد از این خرید: <b>${fmt(activeBank.balance - (Number(state.amount)||0))} تومان</b></div>` : ''}
-    </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی خرید ثبت کنی.</div>`;
+      <button class="submit-btn" id="submitBtn" ${(!state.amount || Number(state.amount)<=0)?'disabled':''}>${mode==='expense'?'کم کن از موجودی':'اضافه کن به موجودی'}</button>
+      ${activeBank && state.amount ? `<div class="after-note">مانده بعد از این ${mode==='expense'?'خرید':'واریز'}: <b>${fmt(mode==='expense' ? activeBank.balance - (Number(state.amount)||0) : activeBank.balance + (Number(state.amount)||0))} تومان</b></div>` : ''}
+    </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی ثبت کنی.</div>`;
 
   const txHtml = state.transactions.length ? state.transactions.map(t=>{
+    if(t.type === "transfer"){
+      const fromBank = state.banks.find(b=>b.id===t.fromBankId);
+      const toBank = state.banks.find(b=>b.id===t.toBankId);
+      const pal = paletteFor(fromBank?fromBank.color:null);
+      return `
+        <div class="tx">
+          <div class="left">
+            <div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>
+            <div>
+              <div class="note">${esc(t.note || "انتقال بین بانک‌ها")}</div>
+              <div class="meta">${esc(fromBank?fromBank.name:"حذف‌شده")} ← ${esc(toBank?toBank.name:"حذف‌شده")} · ${fmtDate(t.date)}</div>
+            </div>
+          </div>
+          <div class="amt transfer">${fmt(t.amount)}</div>
+        </div>`;
+    }
     const bank = state.banks.find(b=>b.id===t.bankId);
     const pal = paletteFor(bank?bank.color:null);
+    const isIncome = t.type === "income";
     return `
       <div class="tx">
         <div class="left">
           <div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>
           <div>
-            <div class="note">${esc(t.note || "بدون توضیح")}</div>
+            <div class="note">${esc(t.note || (isIncome?"واریز":"بدون توضیح"))}</div>
             <div class="meta">${esc(bank?bank.name:"بانک حذف‌شده")} · ${fmtDate(t.date)}</div>
           </div>
         </div>
-        <div class="amt">-${fmt(t.amount)}</div>
+        <div class="amt ${isIncome?'income':''}">${isIncome?'+':'-'}${fmt(t.amount)}</div>
       </div>`;
-  }).join("") : `<div class="empty">هنوز خریدی ثبت نشده.</div>`;
+  }).join("") : `<div class="empty">هنوز تراکنشی ثبت نشده.</div>`;
 
   app.innerHTML = `
     <div class="header">
@@ -271,6 +327,7 @@ function render(){
     <div class="cards">
       ${cardsHtml}
       <button class="add-card" id="openAddBank">${ICONS.plus}<span>بانک جدید</span></button>
+      ${state.banks.length>1 ? `<button class="add-card" id="openTransfer">${ICONS.transfer}<span>انتقال</span></button>` : ''}
     </div>
 
     ${quickAddHtml}
@@ -284,10 +341,36 @@ function render(){
     </div>
 
     ${state.showAddBank ? renderAddBankModal() : ''}
+    ${state.showTransfer ? renderTransferModal() : ''}
     <div class="toast" id="toast"></div>
   `;
 
   attachEvents();
+}
+
+function renderTransferModal(){
+  const fromId = state._transferFrom || (state.banks[0] && state.banks[0].id);
+  const toId = state._transferTo || (state.banks[1] ? state.banks[1].id : (state.banks[0] && state.banks[0].id));
+  const options = (selectedId) => state.banks.map(b=>`<option value="${b.id}" ${b.id===selectedId?'selected':''}>${esc(b.name)} (${fmt(b.balance)})</option>`).join("");
+  const canSubmit = state._transferAmount && Number(state._transferAmount)>0 && fromId && toId && fromId!==toId;
+
+  return `
+  <div class="overlay" id="transferOverlay">
+    <div class="sheet" id="transferSheet">
+      <div class="head">
+        <div class="title">انتقال بین بانک‌ها</div>
+        <button class="close-btn" id="closeTransferModal">${ICONS.x}</button>
+      </div>
+      <div class="field-label">از</div>
+      <select class="note-input" id="transferFrom">${options(fromId)}</select>
+      <div class="field-label">به</div>
+      <select class="note-input" id="transferTo">${options(toId)}</select>
+      <input class="amount-input" inputmode="numeric" placeholder="مبلغ انتقال (تومان)" id="transferAmount" value="${esc(state._transferAmount||'')}" />
+      <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="transferNote" value="${esc(state._transferNote||'')}" />
+      ${fromId===toId ? `<div class="field-label" style="color:#D9764F;margin-bottom:10px;">بانک مبدا و مقصد نباید یکی باشن</div>` : ''}
+      <button class="submit-btn" id="submitTransferBtn" ${!canSubmit?'disabled':''}>انتقال بده</button>
+    </div>
+  </div>`;
 }
 
 function renderAddBankModal(){
@@ -330,10 +413,12 @@ function attachEvents(){
       const submitBtn = document.getElementById('submitBtn');
       submitBtn.disabled = !state.amount || Number(state.amount)<=0;
       const activeBank = state.banks.find(b=>b.id===state.activeBankId);
+      const mode = state.mode || "expense";
       let note = document.querySelector('.after-note');
       const parent = document.querySelector('.card');
       if(activeBank && state.amount){
-        const val = `<div class="after-note">مانده بعد از این خرید: <b>${fmt(activeBank.balance - (Number(state.amount)||0))} تومان</b></div>`;
+        const newBal = mode==='expense' ? activeBank.balance - (Number(state.amount)||0) : activeBank.balance + (Number(state.amount)||0);
+        const val = `<div class="after-note">مانده بعد از این ${mode==='expense'?'خرید':'واریز'}: <b>${fmt(newBal)} تومان</b></div>`;
         if(note) note.outerHTML = val; else parent.insertAdjacentHTML('beforeend', val);
       } else if(note){ note.remove(); }
       // keep caret at end without full rerender
@@ -345,10 +430,44 @@ function attachEvents(){
   if(noteInput) noteInput.addEventListener('input', e=>{ state.note = e.target.value; });
 
   const submitBtn = document.getElementById('submitBtn');
-  if(submitBtn) submitBtn.addEventListener('click', submitExpense);
+  if(submitBtn) submitBtn.addEventListener('click', submitTransaction);
+
+  document.querySelectorAll('[data-mode]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.mode = el.getAttribute('data-mode'); render(); });
+  });
 
   const undoBtn = document.getElementById('undoBtn');
   if(undoBtn) undoBtn.addEventListener('click', undoLast);
+
+  const openTransfer = document.getElementById('openTransfer');
+  if(openTransfer) openTransfer.addEventListener('click', ()=>{
+    state.showTransfer = true;
+    state._transferFrom = state.banks[0] && state.banks[0].id;
+    state._transferTo = state.banks[1] ? state.banks[1].id : (state.banks[0] && state.banks[0].id);
+    state._transferAmount = ""; state._transferNote = "";
+    render();
+  });
+  const closeTransferModal = document.getElementById('closeTransferModal');
+  if(closeTransferModal) closeTransferModal.addEventListener('click', ()=>{ state.showTransfer=false; render(); });
+  const transferOverlay = document.getElementById('transferOverlay');
+  if(transferOverlay) transferOverlay.addEventListener('click', e=>{ if(e.target.id==='transferOverlay'){ state.showTransfer=false; render(); } });
+  const transferFrom = document.getElementById('transferFrom');
+  if(transferFrom) transferFrom.addEventListener('change', e=>{ state._transferFrom = e.target.value; render(); });
+  const transferTo = document.getElementById('transferTo');
+  if(transferTo) transferTo.addEventListener('change', e=>{ state._transferTo = e.target.value; render(); });
+  const transferAmount = document.getElementById('transferAmount');
+  if(transferAmount) transferAmount.addEventListener('input', e=>{
+    state._transferAmount = toEnglishDigits(e.target.value);
+    e.target.value = state._transferAmount;
+    const btn = document.getElementById('submitTransferBtn');
+    if(btn) btn.disabled = !state._transferAmount || Number(state._transferAmount)<=0 || state._transferFrom===state._transferTo;
+    const pos = e.target.value.length;
+    e.target.setSelectionRange(pos,pos);
+  });
+  const transferNote = document.getElementById('transferNote');
+  if(transferNote) transferNote.addEventListener('input', e=>{ state._transferNote = e.target.value; });
+  const submitTransferBtn = document.getElementById('submitTransferBtn');
+  if(submitTransferBtn) submitTransferBtn.addEventListener('click', submitTransfer);
 
   const openAddBank = document.getElementById('openAddBank');
   if(openAddBank) openAddBank.addEventListener('click', ()=>{ state.showAddBank = true; state._newColor = PALETTE[0].id; state._newName=''; state._newBalance=''; render(); });
