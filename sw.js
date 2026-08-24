@@ -1,4 +1,4 @@
-const CACHE_NAME = "money-app-v1";
+const CACHE_NAME = "money-app-v2";
 const ASSETS = ["./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -17,8 +17,24 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Network-first for the HTML page itself, so app updates always show up.
+// Cache-first for static assets (icons/manifest) for speed offline.
 self.addEventListener("fetch", (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
-  );
+  const req = event.request;
+  const isHTML = req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html");
+
+  if (isHTML) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+  } else {
+    event.respondWith(
+      caches.match(req).then((cached) => cached || fetch(req))
+    );
+  }
 });
