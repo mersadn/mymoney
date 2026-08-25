@@ -1,5 +1,11 @@
-const CACHE_NAME = "money-app-v2";
-const ASSETS = ["./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+const CACHE_NAME = "money-app-v3";
+const ASSETS = [
+  "./index.html",
+  "./manifest.json",
+  "./icon-192.png",
+  "./icon-512.png",
+  "https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap"
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -17,8 +23,10 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Network-first for the HTML page itself, so app updates always show up.
-// Cache-first for static assets (icons/manifest) for speed offline.
+// Network-first for the HTML page itself, so app updates always show up when online,
+// but always fall back to the cached copy (or the cached index.html) when offline.
+// Cache-first + runtime caching for everything else (fonts, icons, manifest, etc.)
+// so anything that has ever loaded once keeps working with no internet at all.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const isHTML = req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html");
@@ -30,11 +38,22 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
           return res;
         })
-        .catch(() => caches.match(req))
+        .catch(() =>
+          caches.match(req).then((cached) => cached || caches.match("./index.html"))
+        )
     );
-  } else {
-    event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req))
-    );
+    return;
   }
+
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req)
+        .then((res) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
+          return res;
+        })
+        .catch(() => cached);
+    })
+  );
 });
