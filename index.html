@@ -206,9 +206,11 @@ function loadState(){
       state.transactions = data.transactions || [];
       state.installments = (data.installments || []).map(inst=>{
         if(Array.isArray(inst.paidInstallments)){
-          return { id: inst.id, name: inst.name||'', amount: inst.amount, startDate: inst.startDate, installmentCount: inst.installmentCount, paidCount: inst.paidInstallments.length };
+          return { id: inst.id, name: inst.name||'', amount: inst.amount, startDate: inst.startDate, installmentCount: inst.installmentCount, paidCount: inst.paidInstallments.length, paymentTxIds: [] };
         }
-        return { name:'', paidCount:0, ...inst };
+        const withDefaults = { name:'', paidCount:0, paymentTxIds:[], ...inst };
+        if(!Array.isArray(withDefaults.paymentTxIds)) withDefaults.paymentTxIds = [];
+        return withDefaults;
       });
       state.loanCardId = data.loanCardId || null;
       if(state.banks.length) state.activeBankId = state.banks[0].id;
@@ -380,15 +382,42 @@ function addInstallment(name, amount, startDate, installmentCount){
 function payNextInstallment(installmentId){
   const inst = state.installments.find(i=>i.id===installmentId);
   if(!inst) return;
+  const bank = state.banks.find(b=>b.id===state.loanCardId);
+  if(!bank){
+    showToast("اول یه بانک رو به‌عنوان «کارت پرداخت اقساط» ⭐ انتخاب کن");
+    render();
+    return;
+  }
+  if(bank.balance < inst.amount){
+    showToast(`موجودی «${bank.name}» برای این قسط کافی نیست`);
+    render();
+    return;
+  }
+  bank.balance -= inst.amount;
+  const tx = { id: uid(), type: "expense", bankId: bank.id, amount: inst.amount, note: `قسط: ${inst.name || "قسط بدون‌نام"}`, date: Date.now() };
+  state.transactions.unshift(tx);
+  if(!Array.isArray(inst.paymentTxIds)) inst.paymentTxIds = [];
+  inst.paymentTxIds.push(tx.id);
   inst.paidCount = Math.min(inst.installmentCount, (inst.paidCount||0) + 1);
   saveState(); render();
-  showToast("قسط پرداخت‌شده ثبت شد");
+  showToast(`قسط از موجودی «${bank.name}» کم شد`);
 }
 function undoLastInstallmentPayment(installmentId){
   const inst = state.installments.find(i=>i.id===installmentId);
   if(!inst) return;
+  if(Array.isArray(inst.paymentTxIds) && inst.paymentTxIds.length){
+    const txId = inst.paymentTxIds.pop();
+    const txIndex = state.transactions.findIndex(t=>t.id===txId);
+    if(txIndex!==-1){
+      const tx = state.transactions[txIndex];
+      const bank = state.banks.find(b=>b.id===tx.bankId);
+      if(bank) bank.balance += tx.amount;
+      state.transactions.splice(txIndex,1);
+    }
+  }
   inst.paidCount = Math.max(0, (inst.paidCount||0) - 1);
   saveState(); render();
+  showToast("پرداخت قسط برگشت خورد");
 }
 function openEditInst(id){
   const inst = state.installments.find(i=>i.id===id);
@@ -615,6 +644,23 @@ function render(){
   const instDayOptions = Array.from({length:instMonthLen},(_,i)=>i+1)
     .map(d=>`<option value="${d}" ${state._instDay===d?'selected':''}>${d}</option>`).join("");
 
+  const loanBank = state.banks.find(b=>b.id===state.loanCardId);
+  const loanTotalForBanner = getActiveInstallmentsTotal();
+  const loanBankSufficient = loanBank ? (loanBank.balance >= loanTotalForBanner) : false;
+  const loanBankStatusCard = state.installments.length ? `
+    <div class="card" style="border:1px solid ${loanBank ? (loanBankSufficient?'#2E9E86':'#D9764F') : '#D9764F'};">
+      <div class="title">${ICONS.star} بانک پرداخت اقساط</div>
+      ${loanBank ? `
+        <div style="font-size:13px;color:#F3EFE6;margin-bottom:4px;">${esc(loanBank.name)} · موجودی فعلی: ${fmt(loanBank.balance)} تومان</div>
+        <div style="font-size:12px;color:${loanBankSufficient?'#2E9E86':'#D9764F'};">
+          ${loanBankSufficient ? `✓ موجودی برای اقساط این ماه (${fmt(loanTotalForBanner)} تومان) کافیه` : `⚠ موجودی «${esc(loanBank.name)}» برای اقساط این ماه (${fmt(loanTotalForBanner)} تومان) کافی نیست`}
+        </div>
+      ` : `
+        <div style="font-size:12.5px;color:#D9764F;">هنوز بانکی برای پرداخت اقساط انتخاب نکردی. از «بانک جدید» روی ⭐ کنار اسم بانک مورد نظر بزن تا قسط‌ها از همون بانک کم بشن.</div>
+      `}
+    </div>
+  ` : '';
+
   const notifPermission = (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported';
   const reminderCard = `
     <div class="card">
@@ -631,6 +677,7 @@ function render(){
   `;
 
   const installmentsContent = `
+    ${loanBankStatusCard}
     ${reminderCard}
     <div class="card">
       <div class="title">قسط جدید</div>
