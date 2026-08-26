@@ -240,6 +240,36 @@ function addBank(name, balance, colorId){
   state.showAddBank = false;
   saveState(); render();
 }
+function openEditBank(id){
+  const bank = state.banks.find(b=>b.id===id);
+  if(!bank) return;
+  state.editingBankId = id;
+  state._editBankName = bank.name;
+  state._editBankBalance = String(bank.balance);
+  state._editBankColor = bank.color;
+  render();
+}
+function saveEditBank(){
+  const bank = state.banks.find(b=>b.id===state.editingBankId);
+  if(!bank) return;
+  const newBalance = Number(state._editBankBalance);
+  if(state._editBankName && state._editBankName.trim()){
+    const balanceDiff = newBalance - bank.balance;
+    bank.name = state._editBankName.trim();
+    bank.balance = newBalance;
+    bank.color = state._editBankColor || PALETTE[0].id;
+    if(balanceDiff !== 0){
+      state.transactions.unshift({ id: uid(), type: "expense", bankId: bank.id, amount: Math.abs(balanceDiff), note: balanceDiff > 0 ? "افزایش موجودی" : "کاهش موجودی", date: Date.now() });
+    }
+  }
+  state.editingBankId = null;
+  saveState(); render();
+  showToast("بانک ویرایش شد");
+}
+function closeEditBank(){
+  state.editingBankId = null;
+  render();
+}
 function deleteBank(id){
   state.banks = state.banks.filter(b=>b.id!==id);
   state.transactions = state.transactions.filter(t=>{
@@ -252,6 +282,7 @@ function deleteBank(id){
     state.activeBankId = state.banks.length ? state.banks[0].id : null;
   }
   if(state.loanCardId===id) state.loanCardId = null;
+  state.editingBankId = null;
   saveState(); render();
 }
 function setLoanCard(id){
@@ -608,21 +639,23 @@ function render(){
   const cardsHtml = state.banks.map(b=>{
     const pal = paletteFor(b.color);
     const active = b.id===state.activeBankId;
-    const isLoanCard = b.id===state.loanCardId;
-    const sufficient = b.balance >= loanTotal;
-    const extraBorder = isLoanCard ? `border-color:${sufficient?'#2E9E86':'#D9764F'} !important;` : '';
     return `
-      <button class="bank-card ${active?'active':''}" data-select-bank="${b.id}" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to}); ${isLoanCard?`border:2.5px solid ${sufficient?'#2E9E86':'#D9764F'};`:''}">
-        <div class="top">
-          <span style="color:rgba(255,255,255,.85); display:flex; gap:3px; align-items:center; transform:scale(0.72); transform-origin:right top;">${ICONS.bank}${isLoanCard?ICONS.star:''}</span>
-          ${active?`<span style="color:#F3EFE6; transform:scale(0.8);">${ICONS.check}</span>`:''}
+      <div style="position:relative;flex:0 0 auto;width:128px;">
+        <button class="bank-card ${active?'active':''}" data-select-bank="${b.id}" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});">
+          <div class="top">
+            <span style="color:rgba(255,255,255,.85); display:flex; gap:3px; align-items:center; transform:scale(0.72); transform-origin:right top;">${ICONS.bank}</span>
+            ${active?`<span style="color:#F3EFE6; transform:scale(0.8);">${ICONS.check}</span>`:''}
+          </div>
+          <div>
+            <div class="name">${esc(b.name)}</div>
+            <div class="balance">${fmt(b.balance)}</div>
+          </div>
+        </button>
+        <div style="position:absolute;top:4px;right:4px;display:flex;gap:4px;">
+          <button class="tx-icon-btn" data-edit-bank="${b.id}" style="width:20px;height:20px;font-size:11px;background:#0F1420;color:#8b93a7;" title="ویرایش">${ICONS.pencil}</button>
+          <button class="tx-icon-btn danger" data-delete-bank="${b.id}" style="width:20px;height:20px;font-size:11px;background:#0F1420;color:#D9764F;" title="حذف">${ICONS.trash}</button>
         </div>
-        <div>
-          <div class="name">${esc(b.name)}</div>
-          <div class="balance">${fmt(b.balance)}</div>
-          ${isLoanCard ? `<div style="font-size:8.5px;margin-top:1px;color:${sufficient?'#D9F5EA':'#FFE1D2'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">قسط: ${fmt(loanTotal)} ${sufficient?'✓':'⚠'}</div>` : ''}
-        </div>
-      </button>`;
+      </div>`;
   }).join("");
 
   const mode = state.mode || "expense";
@@ -876,6 +909,7 @@ function render(){
     ${tabContent}
 
     ${state.showAddBank ? renderAddBankModal() : ''}
+    ${state.editingBankId ? renderEditBankModal() : ''}
     ${state.editingTxId ? renderEditTxModal() : ''}
     ${state.editingInstId ? renderEditInstModal() : ''}
     <datalist id="noteSuggestions">
@@ -1003,6 +1037,28 @@ function renderAddBankModal(){
   </div>`;
 }
 
+function renderEditBankModal(){
+  const bank = state.banks.find(b=>b.id===state.editingBankId);
+  if(!bank) return '';
+  const swatches = PALETTE.map(p=>`
+    <button class="swatch ${state._editBankColor===p.id?'active':''}" data-swatch-edit="${p.id}" style="background:linear-gradient(135deg, ${p.from}, ${p.to});" title="${p.label}"></button>
+  `).join("");
+  return `
+  <div class="overlay" id="editBankOverlay">
+    <div class="sheet" id="editBankSheet">
+      <div class="head">
+        <div class="title">ویرایش بانک</div>
+        <button class="close-btn" id="closeEditBankModal">${ICONS.x}</button>
+      </div>
+      <input class="note-input" placeholder="اسم بانک" id="editBankName" value="${esc(state._editBankName||'')}" />
+      <input class="amount-input" inputmode="numeric" placeholder="موجودی فعلی (تومان)" id="editBankBalance" value="${esc(state._editBankBalance||'')}" />
+      <div style="font-size:12.5px;color:#8b93a7;margin:12px 0 8px;">رنگ کارت</div>
+      <div class="palette">${swatches}</div>
+      <button class="submit-btn" id="saveEditBankBtn" ${!(state._editBankName&&state._editBankName.trim())?'disabled':''}>ذخیره تغییرات</button>
+    </div>
+  </div>`;
+}
+
 function attachEvents(){
   document.querySelectorAll('[data-select-bank]').forEach(el=>{
     el.addEventListener('click', ()=>{ state.activeBankId = el.getAttribute('data-select-bank'); render(); });
@@ -1097,12 +1153,30 @@ function attachEvents(){
     if(state._newName && state._newName.trim()) addBank(state._newName.trim(), state._newBalance, state._newColor||PALETTE[0].id);
   });
 
+  document.querySelectorAll('[data-edit-bank]').forEach(el=>{
+    el.addEventListener('click', (e)=>{ e.stopPropagation(); openEditBank(el.getAttribute('data-edit-bank')); });
+  });
   document.querySelectorAll('[data-delete-bank]').forEach(el=>{
-    el.addEventListener('click', ()=>deleteBank(el.getAttribute('data-delete-bank')));
+    el.addEventListener('click', (e)=>{ e.stopPropagation(); deleteBank(el.getAttribute('data-delete-bank')); });
   });
   document.querySelectorAll('[data-set-loan-bank]').forEach(el=>{
     el.addEventListener('click', ()=> setLoanCard(el.getAttribute('data-set-loan-bank')));
   });
+
+  const closeEditBankModal = document.getElementById('closeEditBankModal');
+  if(closeEditBankModal) closeEditBankModal.addEventListener('click', closeEditBank);
+  
+  const editBankNameInput = document.getElementById('editBankName');
+  if(editBankNameInput) editBankNameInput.addEventListener('input', e=>{ state._editBankName = e.target.value; });
+  const editBankBalanceInput = document.getElementById('editBankBalance');
+  if(editBankBalanceInput) editBankBalanceInput.addEventListener('input', e=>{ state._editBankBalance = toEnglishDigits(e.target.value); });
+  
+  document.querySelectorAll('[data-swatch-edit]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state._editBankColor = el.getAttribute('data-swatch-edit'); render(); });
+  });
+  
+  const saveEditBankBtn = document.getElementById('saveEditBankBtn');
+  if(saveEditBankBtn) saveEditBankBtn.addEventListener('click', saveEditBank);
 
   const exportBtn = document.getElementById('exportBtn');
   if(exportBtn) exportBtn.addEventListener('click', exportData);
