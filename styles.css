@@ -1,0 +1,523 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+
+* { 
+  box-sizing: border-box; 
+  font-family: 'Vazirmatn', sans-serif; 
+  margin: 0; 
+  padding: 0; 
+}
+
+html, body { 
+  background: #0F1420; 
+  color: #F3EFE6; 
+}
+
+::-webkit-scrollbar { 
+  display: none; 
+}
+
+button { 
+  cursor: pointer; 
+  font-family: inherit; 
+  border: none; 
+  background: none; 
+  color: inherit; 
+}
+
+input { 
+  font-family: inherit; 
+}
+
+#app { 
+  min-height: 100vh; 
+  padding-bottom: 16px; 
+}
+
+/* ---------- Header ---------- */
+.header { 
+  padding: 22px 18px 8px; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: flex-start; 
+}
+
+.header .label { 
+  font-size: 13px; 
+  color: #8b93a7; 
+  margin-bottom: 4px; 
+}
+
+.header .total { 
+  font-size: 34px; 
+  font-weight: 800; 
+  color: #F3EFE6; 
+  letter-spacing: -0.5px; 
+}
+
+.header .total .unit { 
+  font-size: 16px; 
+  font-weight: 500; 
+  color: #C99A3E; 
+}
+
+.header .actions { 
+  display: flex; 
+  gap: 8px; 
+  margin-top: 4px; 
+}
+
+.icon-btn { 
+  width: 34px; 
+  height: 34px; 
+  border-radius: 10px; 
+  background: #171b28; 
+  border: 1px solid #262c3d; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+}
+
+/* ---------- Cards ---------- */
+.cards { 
+  display: flex; 
+  gap: 10px; 
+  overflow-x: auto; 
+  padding: 14px 18px 6px; 
+  scroll-snap-type: x proximity; 
+}
+
+.bank-card { 
+  flex: 0 0 auto; 
+  width: 128px; 
+  height: 76px; 
+  border-radius: 13px; 
+  border: 2px solid transparent; 
+  padding: 9px 10px; 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: space-between; 
+  text-align: right; 
+  scroll-snap-align: start; 
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); 
+  transition: transform .15s, box-shadow .15s; 
+}
+
+.bank-card.active { 
+  border-color: #F3EFE6; 
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); 
+  transform: translateY(-2px); 
+}
+
+.bank-card .top { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: flex-start; 
+}
+
+.bank-card .name { 
+  font-size: 11px; 
+  color: rgba(255, 255, 255, 0.8); 
+  margin-bottom: 1px; 
+}
+
+.bank-card .balance { 
+  font-size: 14.5px; 
+  font-weight: 700; 
+  color: #fff; 
+}
+
+.add-card { 
+  flex: 0 0 auto; 
+  width: 68px; 
+  height: 76px; 
+  border-radius: 13px; 
+  border: 2px dashed #333c4d; 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 4px; 
+  color: #8b93a7; 
+  font-size: 10.5px; 
+}
+
+/* ---------- Form Card ---------- */
+.card { 
+  margin: 14px 18px 0; 
+  background: #171b28; 
+  border-radius: 16px; 
+  padding: 16px; 
+}
+
+.card .title { 
+  font-size: 13px; 
+  color: #8b93a7; 
+  margin-bottom: 10px; 
+}
+
+.amount-input { 
+  width: 100%; 
+  background: #0F1420; 
+  border: 1px solid #2a3040; 
+  border-radius: 10px; 
+  padding: 12px 14px; 
+  font-size: 17px; 
+  font-weight: 700; 
+  color: #F3EFE6; 
+  margin-bottom: 10px; 
+  outline: none; 
+  text-align: right; 
+}
+
+.note-input { 
+  width: 100%; 
+  background: #0F1420; 
+  border: 1px solid #2a3040; 
+  border-radius: 10px; 
+  padding: 11px 14px; 
+  font-size: 13.5px; 
+  color: #F3EFE6; 
+  margin-bottom: 10px; 
+  outline: none; 
+  text-align: right; 
+}
+
+select.note-input { 
+  appearance: none; 
+  -webkit-appearance: none; 
+}
+
+.field-label { 
+  font-size: 12.5px; 
+  color: #8b93a7; 
+  margin-bottom: 6px; 
+}
+
+.mode-toggle { 
+  display: flex; 
+  gap: 8px; 
+  margin-bottom: 12px; 
+  background: #0F1420; 
+  padding: 4px; 
+  border-radius: 10px; 
+}
+
+.mode-btn { 
+  flex: 1; 
+  padding: 8px 0; 
+  border-radius: 8px; 
+  font-size: 13px; 
+  color: #8b93a7; 
+  text-align: center; 
+}
+
+.mode-btn.active { 
+  background: #262c3d; 
+  color: #F3EFE6; 
+  font-weight: 600; 
+}
+
+.submit-btn { 
+  width: 100%; 
+  background: linear-gradient(135deg, #C99A3E, #8C6A1F); 
+  border-radius: 10px; 
+  padding: 13px 14px; 
+  font-size: 14.5px; 
+  font-weight: 700; 
+  color: #0F1420; 
+}
+
+.submit-btn:disabled { 
+  opacity: .45; 
+}
+
+.after-note { 
+  font-size: 12.5px; 
+  color: #8b93a7; 
+  margin-top: 10px; 
+  text-align: center; 
+}
+
+.after-note b { 
+  color: #F3EFE6; 
+}
+
+/* ---------- History ---------- */
+.history { 
+  padding: 18px 18px 90px; 
+}
+
+.history .head { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  margin-bottom: 10px; 
+}
+
+.history .head .title { 
+  font-size: 14px; 
+  font-weight: 600; 
+  color: #F3EFE6; 
+}
+
+.empty { 
+  color: #5c6577; 
+  font-size: 13px; 
+  text-align: center; 
+  padding: 30px 0; 
+}
+
+.tx { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  background: #171b28; 
+  border-radius: 12px; 
+  padding: 10px 12px; 
+  margin-bottom: 8px; 
+}
+
+.tx .left { 
+  display: flex; 
+  align-items: center; 
+  gap: 10px; 
+}
+
+.dot { 
+  width: 8px; 
+  height: 8px; 
+  border-radius: 50%; 
+}
+
+.tx .note { 
+  font-size: 13.5px; 
+  color: #F3EFE6; 
+}
+
+.tx .meta { 
+  font-size: 11.5px; 
+  color: #6b7386; 
+}
+
+.tx .amt { 
+  font-size: 14px; 
+  font-weight: 700; 
+  color: #D9764F; 
+}
+
+.tx .amt.income { 
+  color: #2E9E86; 
+}
+
+.tx .amt.transfer { 
+  color: #C99A3E; 
+}
+
+.tx .right { 
+  display: flex; 
+  align-items: center; 
+  gap: 6px; 
+}
+
+.tx-icon-btn { 
+  width: 26px; 
+  height: 26px; 
+  border-radius: 8px; 
+  background: #0F1420; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  color: #8b93a7; 
+  flex: 0 0 auto; 
+}
+
+.tx-icon-btn.danger { 
+  color: #D9764F; 
+}
+
+/* ---------- Tabs & Installments ---------- */
+.tabs { 
+  display: flex; 
+  gap: 8px; 
+  padding: 12px 18px; 
+  background: #171b28; 
+  overflow-x: auto; 
+}
+
+.tab { 
+  flex: 0 0 auto; 
+  padding: 8px 14px; 
+  border-radius: 8px; 
+  background: #0F1420; 
+  color: #8b93a7; 
+  font-size: 13px; 
+  font-weight: 500; 
+  border: none; 
+  cursor: pointer; 
+  white-space: nowrap; 
+}
+
+.tab.active { 
+  background: #262c3d; 
+  color: #F3EFE6; 
+}
+
+.installment-item { 
+  background: #171b28; 
+  border-radius: 12px; 
+  padding: 12px; 
+  margin-bottom: 10px; 
+}
+
+.installment-item .header { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  margin-bottom: 8px; 
+}
+
+.installment-item .amount { 
+  font-size: 16px; 
+  font-weight: 700; 
+  color: #F3EFE6; 
+}
+
+.installment-item .paid { 
+  font-size: 12px; 
+  color: #2E9E86; 
+}
+
+.installment-item .date-info { 
+  font-size: 12px; 
+  color: #8b93a7; 
+  margin-bottom: 8px; 
+}
+
+.installment-progress { 
+  display: flex; 
+  gap: 6px; 
+  margin-bottom: 8px; 
+  flex-wrap: wrap; 
+}
+
+.install-checkbox { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  padding: 8px; 
+  background: #0F1420; 
+  border-radius: 8px; 
+  margin-bottom: 6px; 
+  cursor: pointer; 
+}
+
+.install-checkbox input { 
+  cursor: pointer; 
+}
+
+.install-checkbox .date { 
+  font-size: 11.5px; 
+  color: #6b7386; 
+}
+
+/* ---------- Overlay & Sheet ---------- */
+.overlay { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(0, 0, 0, 0.55); 
+  display: flex; 
+  align-items: flex-end; 
+  z-index: 50; 
+}
+
+.sheet { 
+  width: 100%; 
+  background: #151926; 
+  border-radius: 20px 20px 0 0; 
+  padding: 20px 18px 28px; 
+  max-height: 85vh; 
+  overflow-y: auto; 
+}
+
+.sheet .head { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  margin-bottom: 16px; 
+}
+
+.sheet .head .title { 
+  font-size: 16px; 
+  font-weight: 700; 
+  color: #F3EFE6; 
+}
+
+.close-btn { 
+  background: #1f2433; 
+  border-radius: 8px; 
+  padding: 6px; 
+  display: flex; 
+}
+
+.palette { 
+  display: flex; 
+  gap: 10px; 
+  flex-wrap: wrap; 
+  margin-bottom: 18px; 
+}
+
+.swatch { 
+  width: 40px; 
+  height: 40px; 
+  border-radius: 10px; 
+  border: 2px solid transparent; 
+}
+
+.swatch.active { 
+  border-color: #F3EFE6; 
+}
+
+.bank-manage-row { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  padding: 8px 4px; 
+}
+
+.bank-manage-row span { 
+  font-size: 13px; 
+  color: #c7cddb; 
+}
+
+.bank-manage-row button { 
+  color: #D9764F; 
+}
+
+/* ---------- Toast ---------- */
+.toast { 
+  position: fixed; 
+  bottom: 16px; 
+  left: 50%; 
+  transform: translateX(-50%); 
+  background: #1f2433; 
+  color: #F3EFE6; 
+  padding: 9px 16px; 
+  border-radius: 999px; 
+  font-size: 12.5px; 
+  display: flex; 
+  align-items: center; 
+  gap: 6px; 
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); 
+  z-index: 100; 
+  opacity: 0; 
+  pointer-events: none; 
+  transition: opacity .2s; 
+}
+
+.toast.show { 
+  opacity: 1; 
+}
+
+svg { 
+  display: block; 
+}
