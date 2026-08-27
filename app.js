@@ -537,21 +537,20 @@ function render(){
     const pal = paletteFor(b.color);
     const active = b.id===state.activeBankId;
     return `
-      <div style="position:relative;flex:0 0 auto;width:128px;">
+      <div style="flex:0 0 auto;width:128px;">
         <button class="bank-card ${active?'active':''}" data-select-bank="${b.id}" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});">
           <div class="top">
             <span style="color:rgba(255,255,255,.85); display:flex; gap:3px; align-items:center; transform:scale(0.72); transform-origin:right top;">${ICONS.bank}</span>
-            ${active?`<span style="color:#F3EFE6; transform:scale(0.8);">${ICONS.check}</span>`:''}
+            <div style="display:flex;gap:3px;">
+              <button class="tx-icon-btn" data-edit-bank="${b.id}" style="width:18px;height:18px;font-size:10px;background:rgba(0,0,0,.3);color:#8b93a7;padding:2px;" title="ویرایش" onclick="event.stopPropagation();">${ICONS.pencil}</button>
+              <button class="tx-icon-btn danger" data-delete-bank="${b.id}" style="width:18px;height:18px;font-size:10px;background:rgba(0,0,0,.3);color:#D9764F;padding:2px;" title="حذف" onclick="event.stopPropagation();">${ICONS.trash}</button>
+            </div>
           </div>
           <div>
             <div class="name">${esc(b.name)}</div>
             <div class="balance">${fmt(b.balance)}</div>
           </div>
         </button>
-        <div style="position:absolute;top:4px;right:4px;display:flex;gap:4px;">
-          <button class="tx-icon-btn" data-edit-bank="${b.id}" style="width:20px;height:20px;font-size:11px;background:#0F1420;color:#8b93a7;" title="ویرایش">${ICONS.pencil}</button>
-          <button class="tx-icon-btn danger" data-delete-bank="${b.id}" style="width:20px;height:20px;font-size:11px;background:#0F1420;color:#D9764F;" title="حذف">${ICONS.trash}</button>
-        </div>
       </div>`;
   }).join("");
 
