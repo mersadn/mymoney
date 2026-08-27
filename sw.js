@@ -1,6 +1,8 @@
-const CACHE_NAME = "money-app-v3";
+const CACHE_NAME = "money-app-v4";
 const ASSETS = [
   "./index.html",
+  "./styles.css",
+  "./app.js",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
@@ -25,7 +27,7 @@ self.addEventListener("activate", (event) => {
 
 // Network-first for the HTML page itself, so app updates always show up when online,
 // but always fall back to the cached copy (or the cached index.html) when offline.
-// Cache-first + runtime caching for everything else (fonts, icons, manifest, etc.)
+// Cache-first + runtime caching for everything else (fonts, icons, manifest, styles, scripts, etc.)
 // so anything that has ever loaded once keeps working with no internet at all.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
