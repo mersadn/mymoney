@@ -3,8 +3,8 @@
   "short_name": "مدیریت پول",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0F1420",
-  "theme_color": "#0F1420",
+  "background_color": "#05060d",
+  "theme_color": "#05060d",
   "lang": "fa",
   "dir": "rtl",
   "icons": [
