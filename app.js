@@ -1,12 +1,28 @@
 // ---------- palette ----------
 const PALETTE = [
-  { id:"gold",  from:"#C99A3E", to:"#8C6A1F", label:"طلایی" },
-  { id:"teal",  from:"#2E9E86", to:"#175E4F", label:"سبزآبی" },
-  { id:"coral", from:"#C2603F", to:"#7E3820", label:"مسی" },
-  { id:"indigo",from:"#4B5A9E", to:"#2A3364", label:"نیلی" },
-  { id:"rose",  from:"#A34E6B", to:"#602B3E", label:"زرشکی" },
-  { id:"slate", from:"#556070", to:"#2E353E", label:"سربی" },
+  { id:"gold",  from:"#FFC24E", to:"#9C6A12", label:"طلایی" },
+  { id:"teal",  from:"#2BE7C4", to:"#0E6E5D", label:"سبزآبی" },
+  { id:"coral", from:"#FF6E4E", to:"#8E3417", label:"مسی" },
+  { id:"indigo",from:"#8B6BFF", to:"#3B2C8C", label:"نیلی" },
+  { id:"rose",  from:"#FF5C9B", to:"#7A1F45", label:"زرشکی" },
+  { id:"cyan",  from:"#29D6FF", to:"#0E5A78", label:"فیروزه‌ای" },
+  { id:"slate", from:"#8792AC", to:"#2E353E", label:"سربی" },
 ];
+// ---------- categories ----------
+const CATEGORIES = [
+  { id:"food",      label:"خوراک",     icon:"🍔", color:"#FF8A5C", type:"expense" },
+  { id:"transport", label:"رفت‌وآمد",  icon:"🚗", color:"#5CA8FF", type:"expense" },
+  { id:"bills",     label:"قبوض",      icon:"🧾", color:"#8B6BFF", type:"expense" },
+  { id:"shopping",  label:"خرید",      icon:"🛍️", color:"#FF5C9B", type:"expense" },
+  { id:"health",    label:"سلامت",     icon:"💊", color:"#35E7C4", type:"expense" },
+  { id:"fun",       label:"تفریح",     icon:"🎮", color:"#FFC24E", type:"expense" },
+  { id:"home",      label:"خانه",      icon:"🏠", color:"#29D6FF", type:"expense" },
+  { id:"salary",    label:"حقوق",      icon:"💼", color:"#35E7C4", type:"income" },
+  { id:"gift",      label:"هدیه",      icon:"🎁", color:"#FF5C9B", type:"income" },
+  { id:"other",     label:"سایر",      icon:"✨", color:"#8b93b0", type:"both" },
+];
+function categoryFor(id){ return CATEGORIES.find(c=>c.id===id) || null; }
+function categoriesForType(type){ return CATEGORIES.filter(c=>c.type===type || c.type==="both"); }
 function paletteFor(id){ return PALETTE.find(p=>p.id===id) || PALETTE[0]; }
 
 // ---------- helpers ----------
@@ -92,7 +108,7 @@ const ICONS = {
 
 // ---------- state ----------
 const STORAGE_KEY = "money-widget-data-v1";
-let state = { banks: [], transactions: [], installments: [], activeBankId: null, showAddBank: false, showTransfer: false, mode: "expense", amount: "", note: "", activeTab: "main", loanCardId: null };
+let state = { banks: [], transactions: [], installments: [], activeBankId: null, showAddBank: false, showTransfer: false, mode: "expense", amount: "", note: "", category: "", activeTab: "main", loanCardId: null, txFilter: "all", txSearch: "" };
 
 function loadState(){
   try{
@@ -192,14 +208,40 @@ function getActiveInstallmentsTotal(){
     return sum + (remaining > 0 ? inst.amount : 0);
   }, 0);
 }
+function isThisJalaliMonth(ts){
+  const today = getTodayJalali();
+  const d = toJalaliYMD(new Date(ts));
+  return d.y === today.y && d.m === today.m;
+}
+function getMonthlyTotals(){
+  let income = 0, expense = 0;
+  for(const t of state.transactions){
+    if(!isThisJalaliMonth(t.date)) continue;
+    if(t.type === "income") income += t.amount;
+    else if(t.type === "expense") expense += t.amount;
+  }
+  return { income, expense, net: income - expense };
+}
+function getMonthlyCategoryBreakdown(type){
+  const totals = {};
+  let grand = 0;
+  for(const t of state.transactions){
+    if(t.type !== type) continue;
+    if(!isThisJalaliMonth(t.date)) continue;
+    const id = t.category || "other";
+    totals[id] = (totals[id]||0) + t.amount;
+    grand += t.amount;
+  }
+  return { totals, grand };
+}
 function submitTransaction(){
   const val = Number(state.amount);
   if(!state.activeBankId || !val || val<=0) return;
   const bank = state.banks.find(b=>b.id===state.activeBankId);
   const mode = state.mode || "expense";
   if(mode === "expense") bank.balance -= val; else bank.balance += val;
-  state.transactions.unshift({ id: uid(), type: mode, bankId: state.activeBankId, amount: val, note: state.note.trim(), date: Date.now() });
-  state.amount = ""; state.note = "";
+  state.transactions.unshift({ id: uid(), type: mode, bankId: state.activeBankId, amount: val, note: state.note.trim(), category: state.category || "", date: Date.now() });
+  state.amount = ""; state.note = ""; state.category = "";
   saveState(); render();
   showToast(mode === "expense" ? "ثبت شد و از موجودی کم شد" : "به موجودی اضافه شد");
 }
@@ -207,6 +249,7 @@ function openEditTx(id){
   state.editingTxId = id;
   state._editAmount = null;
   state._editNote = null;
+  state._editCategory = null;
   render();
 }
 function closeEditTx(){
@@ -218,6 +261,7 @@ function saveEditTx(){
   if(!t) return;
   const newAmount = Number(state._editAmount!=null ? state._editAmount : t.amount);
   const newNote = state._editNote!=null ? state._editNote : (t.note||'');
+  const newCategory = state._editCategory!=null ? state._editCategory : (t.category||'');
   if(!newAmount || newAmount<=0){ showToast("مبلغ معتبر نیست"); return; }
   const oldAmount = t.amount;
   if(t.type === "transfer"){
@@ -234,7 +278,8 @@ function saveEditTx(){
   }
   t.amount = newAmount;
   t.note = newNote.trim();
-  state.editingTxId = null; state._editAmount = null; state._editNote = null;
+  t.category = newCategory;
+  state.editingTxId = null; state._editAmount = null; state._editNote = null; state._editCategory = null;
   saveState(); render();
   showToast("تراکنش ویرایش شد");
 }
@@ -454,7 +499,7 @@ function getCardUsageTotal(bankId){
   }, 0);
 }
 function renderCardDetailContent(){
-  if(!state.banks.length) return `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">اول یه بانک اضافه کن.</div>`;
+  if(!state.banks.length) return `<div class="card" style="text-align:center;color:var(--text-dim);margin-top:20px;">اول یه بانک اضافه کن.</div>`;
   const bank = state.banks.find(b=>b.id===state._detailBankId) || state.banks[0];
   const pal = paletteFor(bank.color);
   const usageTotal = getCardUsageTotal(bank.id);
@@ -468,7 +513,7 @@ function renderCardDetailContent(){
   const chips = state.banks.map(b=>{
     const sel = b.id === bank.id;
     const p = paletteFor(b.color);
-    return `<button data-select-detail-bank="${b.id}" style="flex:0 0 auto; padding:8px 12px; border-radius:9px; font-size:12px; background:${sel?`linear-gradient(135deg, ${p.from}, ${p.to})`:'#0F1420'}; color:${sel?'#fff':'#c7cddb'}; border:1px solid ${sel?'transparent':'#262c3d'};">${esc(b.name)}</button>`;
+    return `<button data-select-detail-bank="${b.id}" style="flex:0 0 auto; padding:8px 12px; border-radius:9px; font-size:12px; background:${sel?`linear-gradient(135deg, ${p.from}, ${p.to})`:'var(--surface)'}; color:${sel?'#fff':'var(--text-soft)'}; border:1px solid ${sel?'transparent':'var(--border)'};">${esc(b.name)}</button>`;
   }).join("");
 
   const listHtml = cardTxs.length ? cardTxs.map(t=>{
@@ -490,12 +535,16 @@ function renderCardDetailContent(){
         </div>`;
     }
     const isIncome = t.type === "income";
+    const cat = categoryFor(t.category);
+    const iconHtml2 = cat
+      ? `<div class="tx-icon" style="background:${cat.color}26;color:${cat.color};">${cat.icon}</div>`
+      : `<div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>`;
     return `
       <div class="tx">
         <div class="left">
-          <div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>
+          ${iconHtml2}
           <div>
-            <div class="note">${esc(t.note || (isIncome?"واریز":"بدون توضیح"))}</div>
+            <div class="note">${esc(t.note || (cat?cat.label:(isIncome?"واریز":"بدون توضیح")))}</div>
             <div class="meta">${fmtDate(t.date)}</div>
           </div>
         </div>
@@ -524,6 +573,68 @@ function renderCardDetailContent(){
   `;
 }
 
+function renderStatsContent(){
+  if(!state.banks.length) return `<div class="card" style="text-align:center;color:var(--text-dim);margin-top:20px;">اول یه بانک اضافه کن.</div>`;
+  const monthly = getMonthlyTotals();
+  const todayJ = getTodayJalali();
+  const monthName = PERSIAN_MONTHS[todayJ.m-1];
+
+  const expenseBd = getMonthlyCategoryBreakdown("expense");
+  const incomeBd = getMonthlyCategoryBreakdown("income");
+
+  function barsHtml(bd){
+    const rows = Object.entries(bd.totals).sort((a,b)=>b[1]-a[1]);
+    if(!rows.length) return `<div class="empty">چیزی برای این ماه ثبت نشده.</div>`;
+    return rows.map(([catId, amt])=>{
+      const cat = categoryFor(catId) || { label: "سایر", icon: "✨", color: "#8b93b0" };
+      const pct = bd.grand ? Math.round((amt/bd.grand)*100) : 0;
+      return `
+        <div class="stat-bar-row">
+          <div class="top">
+            <div class="cat-name"><span>${cat.icon}</span>${esc(cat.label)}</div>
+            <div class="cat-amt">${fmt(amt)} تومان · ${pct}%</div>
+          </div>
+          <div class="stat-bar-track">
+            <div class="stat-bar-fill" style="width:${pct}%;background:linear-gradient(90deg, ${cat.color}, ${cat.color}99);"></div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  const maxOfBoth = Math.max(monthly.income, monthly.expense, 1);
+  const incomeBarPct = Math.round((monthly.income/maxOfBoth)*100);
+  const expenseBarPct = Math.round((monthly.expense/maxOfBoth)*100);
+
+  return `
+    <div class="card">
+      <div class="title">خلاصه ${esc(monthName)} ماه</div>
+      <div class="summary-strip" style="padding:0; margin-top:2px;">
+        <div class="summary-pill income"><div class="lbl">درآمد</div><div class="val">${fmt(monthly.income)}</div></div>
+        <div class="summary-pill expense"><div class="lbl">هزینه</div><div class="val">${fmt(monthly.expense)}</div></div>
+        <div class="summary-pill net"><div class="lbl">خالص</div><div class="val">${monthly.net>=0?'+':''}${fmt(monthly.net)}</div></div>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="stat-bar-row">
+          <div class="top"><div class="cat-name" style="color:var(--success);">درآمد</div><div class="cat-amt">${fmt(monthly.income)}</div></div>
+          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${incomeBarPct}%;background:linear-gradient(90deg, var(--success), #0E6E5D);"></div></div>
+        </div>
+        <div class="stat-bar-row" style="margin-bottom:0;">
+          <div class="top"><div class="cat-name" style="color:var(--danger);">هزینه</div><div class="cat-amt">${fmt(monthly.expense)}</div></div>
+          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${expenseBarPct}%;background:linear-gradient(90deg, var(--danger), #8E3417);"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="title">هزینه‌ها بر اساس دسته‌بندی (${esc(monthName)})</div>
+      ${barsHtml(expenseBd)}
+    </div>
+    <div class="card">
+      <div class="title">درآمدها بر اساس دسته‌بندی (${esc(monthName)})</div>
+      ${barsHtml(incomeBd)}
+    </div>
+  `;
+}
+
 function render(){
   const app = document.getElementById("app");
   const __scrollY = window.scrollY;
@@ -531,8 +642,12 @@ function render(){
   const __sheetScroll = __sheetEl ? __sheetEl.scrollTop : 0;
   const __cardsEl = document.querySelector(".cards");
   const __cardsScroll = __cardsEl ? __cardsEl.scrollLeft : 0;
+  const __active = document.activeElement;
+  const __focusedId = (__active && __active.id) ? __active.id : null;
+  const __focusedSel = (__focusedId && typeof __active.selectionStart === 'number') ? __active.selectionStart : null;
   const activeBank = state.banks.find(b=>b.id===state.activeBankId);
   const total = state.banks.reduce((s,b)=>s+b.balance,0);
+  const monthlyTotals = getMonthlyTotals();
 
   const loanTotal = getActiveInstallmentsTotal();
   const cardsHtml = state.banks.map(b=>{
@@ -540,12 +655,12 @@ function render(){
     const active = b.id===state.activeBankId;
     return `
       <div style="flex:0 0 auto;width:128px;">
-        <div class="bank-card ${active?'active':''}" data-select-bank="${b.id}" role="button" tabindex="0" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to}); cursor:pointer;">
+        <div class="bank-card ${active?'active':''}" data-select-bank="${b.id}" role="button" tabindex="0" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to}); cursor:pointer; box-shadow:${active?`0 10px 26px ${pal.from}55, 0 2px 8px rgba(0,0,0,.4)`:'0 6px 16px rgba(0,0,0,.35)'};">
           <div class="top">
             <span style="color:rgba(255,255,255,.85); display:flex; gap:3px; align-items:center; transform:scale(0.72); transform-origin:right top;">${ICONS.bank}</span>
             <div style="display:flex;gap:3px;">
-              <button class="tx-icon-btn" data-edit-bank="${b.id}" style="width:18px;height:18px;font-size:10px;background:rgba(0,0,0,.3);color:#8b93a7;padding:2px;" title="ویرایش" onclick="event.stopPropagation();">${ICONS.pencil}</button>
-              <button class="tx-icon-btn danger" data-delete-bank="${b.id}" style="width:18px;height:18px;font-size:10px;background:rgba(0,0,0,.3);color:#D9764F;padding:2px;" title="حذف" onclick="event.stopPropagation();">${ICONS.trash}</button>
+              <button class="tx-icon-btn" data-edit-bank="${b.id}" style="width:18px;height:18px;font-size:10px;background:rgba(0,0,0,.3);color:var(--text-dim);padding:2px;" title="ویرایش" onclick="event.stopPropagation();">${ICONS.pencil}</button>
+              <button class="tx-icon-btn danger" data-delete-bank="${b.id}" style="width:18px;height:18px;font-size:10px;background:rgba(0,0,0,.3);color:var(--danger);padding:2px;" title="حذف" onclick="event.stopPropagation();">${ICONS.trash}</button>
             </div>
           </div>
           <div>
@@ -566,16 +681,45 @@ function render(){
       <div class="title">${mode==='expense' ? `ثبت خرید از «${esc(activeBank?activeBank.name:'')}»` : `افزایش موجودی «${esc(activeBank?activeBank.name:'')}»`}</div>
       <input class="amount-input" inputmode="numeric" placeholder="${mode==='expense'?'مبلغ خرید (تومان)':'مبلغ واریزی (تومان)'}" id="amountInput" value="${esc(state.amount)}" />
       <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="noteInput" list="noteSuggestions" value="${esc(state.note)}" />
+      <div class="field-label">دسته‌بندی (اختیاری)</div>
+      <div class="cat-row">
+        ${categoriesForType(mode).map(c=>`
+          <button class="cat-chip ${state.category===c.id?'active':''}" data-quick-cat="${c.id}" style="${state.category===c.id?`background:linear-gradient(135deg, ${c.color}, ${c.color}99);`:''}">
+            <span class="ic">${c.icon}</span>${esc(c.label)}
+          </button>`).join("")}
+      </div>
       <button class="submit-btn" id="submitBtn" ${(!state.amount || Number(state.amount)<=0)?'disabled':''}>${mode==='expense'?'کم کن از موجودی':'اضافه کن به موجودی'}</button>
       ${activeBank && state.amount ? `<div class="after-note">مانده بعد از این ${mode==='expense'?'خرید':'واریز'}: <b>${fmt(mode==='expense' ? activeBank.balance - (Number(state.amount)||0) : activeBank.balance + (Number(state.amount)||0))} تومان</b></div>` : ''}
-    </div>` : `<div class="card" style="text-align:center;color:#8b93a7;">اول یه بانک اضافه کن تا بتونی ثبت کنی.</div>`;
+    </div>` : `<div class="card" style="text-align:center;color:var(--text-dim);">اول یه بانک اضافه کن تا بتونی ثبت کنی.</div>`;
 
   // ---------- build transaction history ----------
   const txActionsHtml = (t) => `
     <button class="tx-icon-btn" data-edit-tx="${t.id}" title="ویرایش">${ICONS.pencil}</button>
     <button class="tx-icon-btn danger" data-delete-tx="${t.id}" title="حذف">${ICONS.trash}</button>`;
 
-  const txHtml = state.transactions.length ? state.transactions.map(t=>{
+  // ---------- filter & search transactions ----------
+  const txFilter = state.txFilter || "all";
+  const txSearch = (state.txSearch || "").trim().toLowerCase();
+  function matchesSearch(t){
+    if(!txSearch) return true;
+    const parts = [];
+    if(t.note) parts.push(t.note);
+    const cat = categoryFor(t.category);
+    if(cat) parts.push(cat.label);
+    if(t.type === "transfer"){
+      const fromBank = state.banks.find(b=>b.id===t.fromBankId);
+      const toBank = state.banks.find(b=>b.id===t.toBankId);
+      if(fromBank) parts.push(fromBank.name);
+      if(toBank) parts.push(toBank.name);
+    } else {
+      const bank = state.banks.find(b=>b.id===t.bankId);
+      if(bank) parts.push(bank.name);
+    }
+    return parts.join(" ").toLowerCase().includes(txSearch);
+  }
+  const filteredTx = state.transactions.filter(t=> (txFilter==='all' || t.type===txFilter) && matchesSearch(t));
+
+  const txHtml = filteredTx.length ? filteredTx.map(t=>{
     if(t.type === "transfer"){
       const fromBank = state.banks.find(b=>b.id===t.fromBankId);
       const toBank = state.banks.find(b=>b.id===t.toBankId);
@@ -598,12 +742,16 @@ function render(){
     const bank = state.banks.find(b=>b.id===t.bankId);
     const pal = paletteFor(bank?bank.color:null);
     const isIncome = t.type === "income";
+    const cat = categoryFor(t.category);
+    const iconHtml = cat
+      ? `<div class="tx-icon" style="background:${cat.color}26;color:${cat.color};">${cat.icon}</div>`
+      : `<div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>`;
     return `
       <div class="tx">
         <div class="left">
-          <div class="dot" style="background:linear-gradient(135deg, ${pal.from}, ${pal.to});"></div>
+          ${iconHtml}
           <div>
-            <div class="note">${esc(t.note || (isIncome?"واریز":"بدون توضیح"))}</div>
+            <div class="note">${esc(t.note || (cat?cat.label:(isIncome?"واریز":"بدون توضیح")))}</div>
             <div class="meta">${esc(bank?bank.name:"بانک حذف‌شده")} · ${fmtDate(t.date)}</div>
           </div>
         </div>
@@ -612,18 +760,29 @@ function render(){
           ${txActionsHtml(t)}
         </div>
       </div>`;
-  }).join("") : `<div class="empty">هنوز تراکنشی ثبت نشده.</div>`;
+  }).join("") : `<div class="empty">${state.transactions.length ? 'تراکنشی با این فیلتر پیدا نشد.' : 'هنوز تراکنشی ثبت نشده.'}</div>`;
 
   // ---------- main tab content ----------
+  const filterChips = [
+    { id:'all', label:'همه' },
+    { id:'expense', label:'خرج' },
+    { id:'income', label:'واریز' },
+    { id:'transfer', label:'انتقال' },
+  ].map(f=>`<button class="filter-chip ${txFilter===f.id?'active':''}" data-tx-filter="${f.id}">${f.label}</button>`).join("");
+
   const mainContent = state.banks.length ? `
     ${quickAddHtml}
     <div class="history">
       <div class="head">
         <div class="title">تراکنش‌های اخیر</div>
       </div>
+      <div class="search-row">
+        <input class="search-input" id="txSearchInput" placeholder="جستجو در توضیح، بانک یا دسته..." value="${esc(state.txSearch||'')}" />
+      </div>
+      <div class="filter-row">${filterChips}</div>
       ${txHtml}
     </div>
-  ` : `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">اول یه بانک اضافه کن.</div>`;
+  ` : `<div class="card" style="text-align:center;color:var(--text-dim);margin-top:20px;">اول یه بانک اضافه کن.</div>`;
 
   // ---------- transfer tab content ----------
   // make sure from/to are always valid bank ids before rendering (fixes transfer silently failing)
@@ -651,7 +810,7 @@ function render(){
       <input class="note-input" placeholder="توضیح (اختیاری)" id="transferNoteTab" value="${esc(state._transferNoteTab||'')}" />
       <button class="submit-btn" id="submitTransferTabBtn" ${(!state._transferAmountTab || Number(state._transferAmountTab)<=0 || state._transferFromTab === state._transferToTab)?'disabled':''}>${ICONS.transfer} انتقال دادن</button>
     </div>
-  ` : `<div class="card" style="text-align:center;color:#8b93a7;margin-top:20px;">برای انتقال، حداقل دو بانک لازم است.</div>`;
+  ` : `<div class="card" style="text-align:center;color:var(--text-dim);margin-top:20px;">برای انتقال، حداقل دو بانک لازم است.</div>`;
 
   // ---------- installments tab content ----------
   const todayJ = getTodayJalali();
@@ -674,20 +833,20 @@ function render(){
   const loanBankPickerChips = state.banks.map(b=>{
     const sel = b.id === state.loanCardId;
     const pal = paletteFor(b.color);
-    return `<button data-set-loan-bank="${b.id}" style="flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:7px 11px; border-radius:9px; font-size:12px; background:${sel?`linear-gradient(135deg, ${pal.from}, ${pal.to})`:'#0F1420'}; color:${sel?'#fff':'#c7cddb'}; border:1px solid ${sel?'transparent':'#262c3d'};">${sel?ICONS.star:''}${esc(b.name)}</button>`;
+    return `<button data-set-loan-bank="${b.id}" style="flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:7px 11px; border-radius:9px; font-size:12px; background:${sel?`linear-gradient(135deg, ${pal.from}, ${pal.to})`:'var(--surface)'}; color:${sel?'#fff':'var(--text-soft)'}; border:1px solid ${sel?'transparent':'var(--border)'};">${sel?ICONS.star:''}${esc(b.name)}</button>`;
   }).join("");
   const loanBankStatusCard = state.banks.length ? `
-    <div class="card" style="border:1px solid ${loanBank ? (loanBankSufficient?'#2E9E86':'#D9764F') : '#333c4d'};">
+    <div class="card" style="border:1px solid ${loanBank ? (loanBankSufficient?'var(--success)':'var(--danger)') : 'var(--border-soft)'};">
       <div class="title">${ICONS.star} کارت پرداخت اقساط</div>
-      <div style="font-size:11.5px;color:#8b93a7;margin-bottom:10px;">یکی از کارت‌های موجودت رو انتخاب کن؛ لازم نیست کارت جدید بسازی.</div>
+      <div style="font-size:11.5px;color:var(--text-dim);margin-bottom:10px;">یکی از کارت‌های موجودت رو انتخاب کن؛ لازم نیست کارت جدید بسازی.</div>
       <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-bottom:${state.installments.length?'12px':'0'};">${loanBankPickerChips}</div>
       ${state.installments.length ? (loanBank ? `
-        <div style="font-size:13px;color:#F3EFE6;margin-bottom:4px;">${esc(loanBank.name)} · موجودی فعلی: ${fmt(loanBank.balance)} تومان</div>
-        <div style="font-size:12px;color:${loanBankSufficient?'#2E9E86':'#D9764F'};">
+        <div style="font-size:13px;color:var(--text);margin-bottom:4px;">${esc(loanBank.name)} · موجودی فعلی: ${fmt(loanBank.balance)} تومان</div>
+        <div style="font-size:12px;color:${loanBankSufficient?'var(--success)':'var(--danger)'};">
           ${loanBankSufficient ? `✓ موجودی برای اقساط این ماه (${fmt(loanTotalForBanner)} تومان) کافیه` : `⚠ موجودی «${esc(loanBank.name)}» برای اقساط این ماه (${fmt(loanTotalForBanner)} تومان) کافی نیست`}
         </div>
       ` : `
-        <div style="font-size:12.5px;color:#D9764F;">هنوز کارتی برای پرداخت اقساط انتخاب نکردی؛ از چیپ‌های بالا یکی رو بزن.</div>
+        <div style="font-size:12.5px;color:var(--danger);">هنوز کارتی برای پرداخت اقساط انتخاب نکردی؛ از چیپ‌های بالا یکی رو بزن.</div>
       `) : ''}
     </div>
   ` : '';
@@ -697,12 +856,12 @@ function render(){
     <div class="card">
       <div class="title">${ICONS.bell} یادآوری اقساط</div>
       ${notifPermission === 'granted' ? `
-        <div style="font-size:12.5px;color:#2E9E86;">یادآوری فعاله؛ یک روز قبل از هر قسط بهت نوتیفیکیشن می‌ده (وقتی اپ رو باز کنی).</div>
+        <div style="font-size:12.5px;color:var(--success);">یادآوری فعاله؛ یک روز قبل از هر قسط بهت نوتیفیکیشن می‌ده (وقتی اپ رو باز کنی).</div>
       ` : notifPermission === 'denied' ? `
-        <div style="font-size:12.5px;color:#D9764F;">اجازه نوتیفیکیشن رد شده. از تنظیمات مرورگر/سایت فعالش کن.</div>
+        <div style="font-size:12.5px;color:var(--danger);">اجازه نوتیفیکیشن رد شده. از تنظیمات مرورگر/سایت فعالش کن.</div>
       ` : `
         <button class="submit-btn" id="enableNotifBtn">${ICONS.bell} فعال‌سازی یادآوری</button>
-        <div style="font-size:11.5px;color:#8b93a7;margin-top:8px;">توجه: چون این اپ سرور نداره، یادآوری وقتی کار می‌کنه که گاهی اپ رو باز کنی؛ کاملاً پس‌زمینه (وقتی اپ کلاً بسته‌ست) پشتیبانی نمی‌شه.</div>
+        <div style="font-size:11.5px;color:var(--text-dim);margin-top:8px;">توجه: چون این اپ سرور نداره، یادآوری وقتی کار می‌کنه که گاهی اپ رو باز کنی؛ کاملاً پس‌زمینه (وقتی اپ کلاً بسته‌ست) پشتیبانی نمی‌شه.</div>
       `}
     </div>
   `;
@@ -734,18 +893,18 @@ function render(){
         const isDone = remaining <= 0;
         let bodyHtml;
         if(isDone){
-          bodyHtml = `<div style="font-size:12.5px;color:#2E9E86;">✓ همه اقساط پرداخت شد</div>`;
+          bodyHtml = `<div style="font-size:12.5px;color:var(--success);">✓ همه اقساط پرداخت شد</div>`;
         } else {
           const dueDate = getInstallmentDueDate(inst, paidCount);
           bodyHtml = `
             <div class="install-checkbox">
               <input type="checkbox" id="inst_${inst.id}" data-inst-id="${inst.id}" />
               <label for="inst_${inst.id}" style="flex:1;cursor:pointer;">
-                <div style="font-size:13px;color:#F3EFE6;">قسط ${paidCount+1} از ${inst.installmentCount}: ${fmt(inst.amount)} تومان</div>
+                <div style="font-size:13px;color:var(--text);">قسط ${paidCount+1} از ${inst.installmentCount}: ${fmt(inst.amount)} تومان</div>
                 <div class="date">سررسید: ${fmtPersianDate(dueDate)} · ${remaining} ماه مانده</div>
               </label>
             </div>
-            ${paidCount>0 ? `<button data-undo-inst="${inst.id}" style="font-size:11.5px;color:#8b93a7;margin-top:2px;">↺ برگشت آخرین پرداخت</button>` : ''}
+            ${paidCount>0 ? `<button data-undo-inst="${inst.id}" style="font-size:11.5px;color:var(--text-dim);margin-top:2px;">↺ برگشت آخرین پرداخت</button>` : ''}
           `;
         }
         return `
@@ -774,10 +933,14 @@ function render(){
   }
   const cardDetailContent = renderCardDetailContent();
 
+  // ---------- stats tab content ----------
+  const statsContent = renderStatsContent();
+
   // ---------- render main app ----------
   const tabContent = state.activeTab === "transfer" ? transferContent : 
                      state.activeTab === "installments" ? installmentsContent :
-                     state.activeTab === "cardDetail" ? cardDetailContent : mainContent;
+                     state.activeTab === "cardDetail" ? cardDetailContent :
+                     state.activeTab === "stats" ? statsContent : mainContent;
 
   app.innerHTML = `
     <div class="header">
@@ -792,6 +955,13 @@ function render(){
       </div>
     </div>
 
+    ${state.banks.length ? `
+    <div class="summary-strip">
+      <div class="summary-pill income"><div class="lbl">درآمد این ماه</div><div class="val">${fmt(monthlyTotals.income)}</div></div>
+      <div class="summary-pill expense"><div class="lbl">خرج این ماه</div><div class="val">${fmt(monthlyTotals.expense)}</div></div>
+      <div class="summary-pill net"><div class="lbl">خالص این ماه</div><div class="val">${monthlyTotals.net>=0?'+':''}${fmt(monthlyTotals.net)}</div></div>
+    </div>` : ''}
+
     <div class="cards">
       ${cardsHtml}
       <button class="add-card" id="openAddBank">${ICONS.plus}<span>بانک جدید</span></button>
@@ -802,6 +972,7 @@ function render(){
       ${state.banks.length>1 ? `<button class="tab ${state.activeTab==='transfer'?'active':''}" data-tab="transfer">انتقال کارت</button>` : ''}
       <button class="tab ${state.activeTab==='installments'?'active':''}" data-tab="installments">اقساط</button>
       ${state.banks.length ? `<button class="tab ${state.activeTab==='cardDetail'?'active':''}" data-tab="cardDetail">جزئیات کارت</button>` : ''}
+      ${state.banks.length ? `<button class="tab ${state.activeTab==='stats'?'active':''}" data-tab="stats">آمار</button>` : ''}
     </div>
 
     ${tabContent}
@@ -824,6 +995,15 @@ function render(){
   if(__newSheet && __sheetScroll) __newSheet.scrollTop = __sheetScroll;
   const __newCards = document.querySelector(".cards");
   if(__newCards && __cardsScroll) __newCards.scrollLeft = __cardsScroll;
+  if(__focusedId){
+    const __newFocus = document.getElementById(__focusedId);
+    if(__newFocus){
+      __newFocus.focus();
+      if(__focusedSel!=null && typeof __newFocus.setSelectionRange === 'function'){
+        try{ __newFocus.setSelectionRange(__focusedSel, __focusedSel); }catch(e){}
+      }
+    }
+  }
 }
 
 function renderTransferModal(){
@@ -845,7 +1025,7 @@ function renderTransferModal(){
       <select class="note-input" id="transferTo">${options(toId)}</select>
       <input class="amount-input" inputmode="numeric" placeholder="مبلغ انتقال (تومان)" id="transferAmount" value="${esc(state._transferAmount||'')}" />
       <input class="note-input" placeholder="بابت چی؟ (اختیاری)" id="transferNote" list="noteSuggestions" value="${esc(state._transferNote||'')}" />
-      ${fromId===toId ? `<div class="field-label" style="color:#D9764F;margin-bottom:10px;">بانک مبدا و مقصد نباید یکی باشن</div>` : ''}
+      ${fromId===toId ? `<div class="field-label" style="color:var(--danger);margin-bottom:10px;">بانک مبدا و مقصد نباید یکی باشن</div>` : ''}
       <button class="submit-btn" id="submitTransferBtn" ${!canSubmit?'disabled':''}>انتقال بده</button>
     </div>
   </div>`;
@@ -854,6 +1034,15 @@ function renderTransferModal(){
 function renderEditTxModal(){
   const t = state.transactions.find(x=>x.id===state.editingTxId);
   if(!t) return '';
+  const curCat = state._editCategory!=null ? state._editCategory : (t.category||'');
+  const catPicker = t.type !== 'transfer' ? `
+      <div class="field-label">دسته‌بندی</div>
+      <div class="cat-row">
+        ${categoriesForType(t.type).map(c=>`
+          <button class="cat-chip ${curCat===c.id?'active':''}" data-edit-cat="${c.id}" style="${curCat===c.id?`background:linear-gradient(135deg, ${c.color}, ${c.color}99);`:''}">
+            <span class="ic">${c.icon}</span>${esc(c.label)}
+          </button>`).join("")}
+      </div>` : '';
   return `
   <div class="overlay" id="editTxOverlay">
     <div class="sheet">
@@ -865,6 +1054,7 @@ function renderEditTxModal(){
       <input class="amount-input" inputmode="numeric" id="editTxAmount" value="${esc(state._editAmount!=null ? state._editAmount : t.amount)}" />
       <div class="field-label">توضیح</div>
       <input class="note-input" id="editTxNote" value="${esc(state._editNote!=null ? state._editNote : (t.note||''))}" />
+      ${catPicker}
       <button class="submit-btn" id="saveEditTxBtn">ذخیره تغییرات</button>
     </div>
   </div>`;
@@ -914,7 +1104,7 @@ function renderAddBankModal(){
     <div class="bank-manage-row">
       <span>${esc(b.name)} ${state.loanCardId===b.id ? '⭐' : ''}</span>
       <div style="display:flex;gap:14px;align-items:center;">
-        <button data-set-loan-bank="${b.id}" style="color:${state.loanCardId===b.id?'#C99A3E':'#8b93a7'};" title="تعیین به‌عنوان کارت اقساط">${ICONS.star}</button>
+        <button data-set-loan-bank="${b.id}" style="color:${state.loanCardId===b.id?'var(--gold)':'var(--text-dim)'};" title="تعیین به‌عنوان کارت اقساط">${ICONS.star}</button>
         <button data-delete-bank="${b.id}">${ICONS.trash}</button>
       </div>
     </div>
@@ -929,10 +1119,10 @@ function renderAddBankModal(){
       </div>
       <input class="note-input" placeholder="اسم بانک (مثلاً ملت، بلوبانک)" id="newBankName" value="${esc(state._newName||'')}" />
       <input class="amount-input" inputmode="numeric" placeholder="موجودی فعلی (تومان)" id="newBankBalance" value="${esc(state._newBalance||'')}" />
-      <div style="font-size:12.5px;color:#8b93a7;margin:12px 0 8px;">رنگ کارت</div>
+      <div style="font-size:12.5px;color:var(--text-dim);margin:12px 0 8px;">رنگ کارت</div>
       <div class="palette">${swatches}</div>
       <button class="submit-btn" id="addBankBtn" ${!(state._newName&&state._newName.trim())?'disabled':''}>${ICONS.plus} اضافه کن</button>
-      ${state.banks.length ? `<div style="margin-top:20px;"><div style="font-size:12px;color:#6b7386;margin-bottom:8px;">مدیریت بانک‌ها · ⭐ کارت پرداخت اقساط</div>${manageRows}</div>` : ''}
+      ${state.banks.length ? `<div style="margin-top:20px;"><div style="font-size:12px;color:var(--text-faint);margin-bottom:8px;">مدیریت بانک‌ها · ⭐ کارت پرداخت اقساط</div>${manageRows}</div>` : ''}
     </div>
   </div>`;
 }
@@ -952,7 +1142,7 @@ function renderEditBankModal(){
       </div>
       <input class="note-input" placeholder="اسم بانک" id="editBankName" value="${esc(state._editBankName||'')}" />
       <input class="amount-input" inputmode="numeric" placeholder="موجودی فعلی (تومان)" id="editBankBalance" value="${esc(state._editBankBalance||'')}" />
-      <div style="font-size:12.5px;color:#8b93a7;margin:12px 0 8px;">رنگ کارت</div>
+      <div style="font-size:12.5px;color:var(--text-dim);margin:12px 0 8px;">رنگ کارت</div>
       <div class="palette">${swatches}</div>
       <button class="submit-btn" id="saveEditBankBtn" ${!(state._editBankName&&state._editBankName.trim())?'disabled':''}>ذخیره تغییرات</button>
     </div>
@@ -965,6 +1155,13 @@ function attachEvents(){
   });
   document.querySelectorAll('[data-select-detail-bank]').forEach(el=>{
     el.addEventListener('click', ()=>{ state._detailBankId = el.getAttribute('data-select-detail-bank'); render(); });
+  });
+
+  const txSearchInput = document.getElementById('txSearchInput');
+  if(txSearchInput) txSearchInput.addEventListener('input', e=>{ state.txSearch = e.target.value; render(); });
+
+  document.querySelectorAll('[data-tx-filter]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.txFilter = el.getAttribute('data-tx-filter'); render(); });
   });
 
   const amountInput = document.getElementById('amountInput');
@@ -990,11 +1187,19 @@ function attachEvents(){
   const noteInput = document.getElementById('noteInput');
   if(noteInput) noteInput.addEventListener('input', e=>{ state.note = e.target.value; });
 
+  document.querySelectorAll('[data-quick-cat]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const id = el.getAttribute('data-quick-cat');
+      state.category = state.category === id ? '' : id;
+      render();
+    });
+  });
+
   const submitBtn = document.getElementById('submitBtn');
   if(submitBtn) submitBtn.addEventListener('click', submitTransaction);
 
   document.querySelectorAll('[data-mode]').forEach(el=>{
-    el.addEventListener('click', ()=>{ state.mode = el.getAttribute('data-mode'); render(); });
+    el.addEventListener('click', ()=>{ state.mode = el.getAttribute('data-mode'); state.category = ''; render(); });
   });
 
   const openTransfer = document.getElementById('openTransfer');
@@ -1246,6 +1451,15 @@ function attachEvents(){
   });
   const editTxNote = document.getElementById('editTxNote');
   if(editTxNote) editTxNote.addEventListener('input', e=>{ state._editNote = e.target.value; });
+  document.querySelectorAll('[data-edit-cat]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const id = el.getAttribute('data-edit-cat');
+      const t = state.transactions.find(x=>x.id===state.editingTxId);
+      const cur = state._editCategory!=null ? state._editCategory : (t?t.category:'');
+      state._editCategory = cur === id ? '' : id;
+      render();
+    });
+  });
   const saveEditTxBtn = document.getElementById('saveEditTxBtn');
   if(saveEditTxBtn) saveEditTxBtn.addEventListener('click', saveEditTx);
 
