@@ -204,8 +204,11 @@ function setLoanCard(id){
 }
 function getActiveInstallmentsTotal(){
   return state.installments.reduce((sum, inst)=>{
-    const remaining = inst.installmentCount - (inst.paidCount||0);
-    return sum + (remaining > 0 ? inst.amount : 0);
+    const paidCount = inst.paidCount||0;
+    const remaining = inst.installmentCount - paidCount;
+    if(remaining <= 0) return sum;
+    const due = getInstallmentDueDate(inst, paidCount);
+    return sum + (isThisJalaliMonth(due.getTime()) ? inst.amount : 0);
   }, 0);
 }
 function isThisJalaliMonth(ts){
