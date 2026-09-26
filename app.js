@@ -372,11 +372,13 @@ function payNextInstallment(installmentId){
     return;
   }
   bank.balance -= inst.amount;
-  const tx = { id: uid(), type: "expense", bankId: bank.id, amount: inst.amount, note: `قسط: ${inst.name || "قسط بدون‌نام"}`, date: Date.now() };
+  const paidCount = inst.paidCount || 0;
+  const dueDate = getInstallmentDueDate(inst, paidCount).getTime();
+  const tx = { id: uid(), type: "expense", bankId: bank.id, amount: inst.amount, note: `قسط: ${inst.name || "قسط بدون‌نام"}`, date: dueDate };
   state.transactions.unshift(tx);
   if(!Array.isArray(inst.paymentTxIds)) inst.paymentTxIds = [];
   inst.paymentTxIds.push(tx.id);
-  inst.paidCount = Math.min(inst.installmentCount, (inst.paidCount||0) + 1);
+  inst.paidCount = Math.min(inst.installmentCount, paidCount + 1);
   saveState(); render();
   showToast(`قسط از موجودی «${bank.name}» کم شد`);
 }
